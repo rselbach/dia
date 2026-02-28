@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.rselbach.dia</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Dia</name>
+  <summary>A desktop Mermaid diagram editor with live preview</summary>
+
+  <description>
+    <p>
+      Dia is a desktop application for creating and editing Mermaid diagrams.
+      It features a code editor with syntax highlighting and a live-rendered
+      preview, making it easy to build flowcharts, sequence diagrams, class
+      diagrams, and more.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>CodeMirror-based editor with Mermaid syntax highlighting</li>
+      <li>Live diagram preview as you type</li>
+      <li>Multiple built-in themes</li>
+      <li>Native file open/save dialogs</li>
+      <li>Support for .mmd and .mermaid file formats</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">dia.desktop</launchable>
+
+  <url type="homepage">https://github.com/rselbach/dia</url>
+  <url type="bugtracker">https://github.com/rselbach/dia/issues</url>
+  <url type="vcs-browser">https://github.com/rselbach/dia</url>
+
+  <developer id="com.github.rselbach">
+    <name>Roberto Selbach</name>
+  </developer>
+
+  <provides>
+    <binary>dia</binary>
+  </provides>
+
+  <content_rating type="oars-1.1"/>
+</component>

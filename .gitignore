@@ -1,5 +1,5 @@
-# Wails build output
-build/
+# Wails build output (keep build/ assets tracked, ignore only bin/)
+build/bin/
 
 # Go
 dia

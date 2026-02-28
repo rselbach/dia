@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Dia
+GenericName=Diagram Editor
+Comment=Create and edit Mermaid diagrams with live preview
+Exec=dia %F
+Icon=dia
+Terminal=false
+Type=Application
+Categories=Development;Graphics;
+MimeType=text/x-mermaid;
+Keywords=mermaid;diagram;flowchart;sequence;chart;graph;
+StartupWMClass=dia

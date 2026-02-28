@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  NODE_OPTIONS: "--max-old-space-size=4096"
+  WAILS_VERSION: "v2.11.0"
+  GO_VERSION: "1.23"
+  NODE_VERSION: "20"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux/amd64
+            artifact: dia-linux-amd64
+          - os: macos-latest
+            platform: darwin/universal
+            artifact: dia-darwin-universal
+          - os: windows-latest
+            platform: windows/amd64
+            artifact: dia-windows-amd64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Build
+        run: wails build -clean -trimpath
+
+      # ── Linux packaging ──────────────────────────────────────────────
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          staging="dia-linux-amd64"
+          mkdir -p "${staging}/icons"
+
+          cp build/bin/dia                                        "${staging}/"
+          cp build/linux/dia.desktop                              "${staging}/"
+          cp build/linux/icon.svg                                 "${staging}/icons/dia.svg"
+          cp build/linux/com.github.rselbach.dia.metainfo.xml     "${staging}/"
+          cp build/linux/x-mermaid.xml                            "${staging}/"
+
+          for png in build/linux/icon-*.png; do
+            size=$(echo "${png}" | grep -oP '\d+x\d+')
+            cp "${png}" "${staging}/icons/dia-${size}.png"
+          done
+
+          cp build/linux/install.sh "${staging}/"
+          chmod +x "${staging}/install.sh"
+
+          tar -czf "${staging}.tar.gz" "${staging}"
+
+      # ── macOS packaging ──────────────────────────────────────────────
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        working-directory: build/bin
+        run: zip -r ../../dia-darwin-universal.zip dia.app
+
+      # ── Windows packaging ────────────────────────────────────────────
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path build\bin\dia.exe -DestinationPath dia-windows-amd64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dia-linux-amd64.tar.gz
+            dia-darwin-universal.zip
+            dia-windows-amd64.zip
