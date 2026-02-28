@@ -26,9 +26,9 @@ jobs:
           - os: macos-latest
             platform: darwin/universal
             artifact: dia-darwin-universal
-          - os: windows-latest
-            platform: windows/amd64
-            artifact: dia-windows-amd64
+          # - os: windows-latest
+          #   platform: windows/amd64
+          #   artifact: dia-windows-amd64
 
     runs-on: ${{ matrix.os }}
 
@@ -215,4 +215,3 @@ jobs:
           files: |
             dia-linux-amd64.tar.gz
             dia-darwin-universal.dmg
-            dia-windows-amd64.zip
