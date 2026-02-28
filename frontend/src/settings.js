@@ -6,15 +6,6 @@ const DEFAULTS = {
     diagramTheme: "default",
 };
 
-export const FONT_OPTIONS = [
-    "monospace",
-    "JetBrains Mono",
-    "Fira Code",
-    "Source Code Pro",
-    "Cascadia Code",
-    "Ubuntu Mono",
-];
-
 // Each theme has:
 //   value/label    — identifier + display name
 //   previewBg      — background color for the preview pane

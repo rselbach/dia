@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	goruntime "runtime"
 
 	"github.com/wailsapp/wails/v2"
@@ -12,8 +13,14 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// version is set via -ldflags "-X main.version=v1.2.3" at build time.
+var version = "dev"
+
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	app := NewApp()
@@ -39,15 +46,41 @@ func main() {
 	}
 }
 
+func showAbout(app *App) {
+	runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.InfoDialog,
+		Title:   "About dia",
+		Message: fmt.Sprintf("dia %s\nA Mermaid diagram editor\n\nby Roberto Selbach", version),
+		Icon:    appIcon,
+	})
+}
+
 // buildMenu constructs the application menu.
 //
-//	macOS:         AppMenu (About, Hide, Quit)  |  File  |  Edit (Settings)
-//	Linux/Windows: File (+ Quit)                |  Edit (Settings)
+//	macOS:         AppMenu (About, Settings, Hide, Quit)  |  File  |  Edit  |  View
+//	Linux/Windows: File (+ Quit)                         |  Edit (Settings) |  View  |  Help (About)
 func buildMenu(app *App) *menu.Menu {
 	appMenu := menu.NewMenu()
 
+	settingsCallback := func(_ *menu.CallbackData) {
+		runtime.EventsEmit(app.ctx, "settings:open")
+	}
+
+	aboutCallback := func(_ *menu.CallbackData) { showAbout(app) }
+
 	if goruntime.GOOS == "darwin" {
-		appMenu.Append(menu.AppMenu())
+		darwinMenu := appMenu.AddSubmenu("dia")
+		darwinMenu.AddText("About dia", nil, aboutCallback)
+		darwinMenu.AddSeparator()
+		darwinMenu.AddText("Settings...", keys.CmdOrCtrl(","), settingsCallback)
+		darwinMenu.AddSeparator()
+		darwinMenu.AddText("Hide dia", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
+			runtime.Hide(app.ctx)
+		})
+		darwinMenu.AddSeparator()
+		darwinMenu.AddText("Quit dia", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+			runtime.Quit(app.ctx)
+		})
 	}
 
 	fileMenu := appMenu.AddSubmenu("File")
@@ -72,9 +105,9 @@ func buildMenu(app *App) *menu.Menu {
 	}
 
 	editMenu := appMenu.AddSubmenu("Edit")
-	editMenu.AddText("Settings...", keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
-		runtime.EventsEmit(app.ctx, "settings:open")
-	})
+	if goruntime.GOOS != "darwin" {
+		editMenu.AddText("Settings...", keys.CmdOrCtrl(","), settingsCallback)
+	}
 
 	viewMenu := appMenu.AddSubmenu("View")
 	themeMenu := viewMenu.AddSubmenu("Theme")
@@ -95,6 +128,11 @@ func buildMenu(app *App) *menu.Menu {
 		themeMenu.AddText(t.label, nil, func(_ *menu.CallbackData) {
 			runtime.EventsEmit(app.ctx, "theme:set", theme)
 		})
+	}
+
+	if goruntime.GOOS != "darwin" {
+		helpMenu := appMenu.AddSubmenu("Help")
+		helpMenu.AddText("About dia", nil, aboutCallback)
 	}
 
 	return appMenu

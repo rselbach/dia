@@ -9,7 +9,8 @@ import { mermaid as mermaidLang } from "codemirror-lang-mermaid";
 import mermaid from "mermaid";
 import DOMPurify from "dompurify";
 
-import { load as loadSettings, save as saveSettings, mermaidConfig, themeEntry, FONT_OPTIONS, THEME_OPTIONS } from "./settings.js";
+import { load as loadSettings, save as saveSettings, mermaidConfig, themeEntry, THEME_OPTIONS } from "./settings.js";
+import { getAvailableFonts, groupByCategory } from "./fonts.js";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import {
     OpenFile,
@@ -26,7 +27,7 @@ let currentSettings = loadSettings();
 function fontTheme(family, size) {
     return EditorView.theme({
         ".cm-content, .cm-gutters": {
-            fontFamily: family,
+            fontFamily: `${family}, monospace`,
             fontSize: `${size}px`,
         },
     });
@@ -335,12 +336,23 @@ const fontFamilySel = document.getElementById("set-font-family");
 const fontSizeInput = document.getElementById("set-font-size");
 const themeSel = document.getElementById("set-diagram-theme");
 
-FONT_OPTIONS.forEach((f) => {
-    const opt = document.createElement("option");
-    opt.value = f;
-    opt.textContent = f;
-    fontFamilySel.appendChild(opt);
-});
+// "monospace" is always available as the generic fallback
+const defaultOpt = document.createElement("option");
+defaultOpt.value = "monospace";
+defaultOpt.textContent = "monospace (default)";
+fontFamilySel.appendChild(defaultOpt);
+
+for (const { label, fonts } of groupByCategory(getAvailableFonts())) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const f of fonts) {
+        const opt = document.createElement("option");
+        opt.value = f.name;
+        opt.textContent = f.ligatures ? `${f.name} (ligatures)` : f.name;
+        group.appendChild(opt);
+    }
+    fontFamilySel.appendChild(group);
+}
 
 THEME_OPTIONS.forEach((t) => {
     const opt = document.createElement("option");
