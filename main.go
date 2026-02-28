@@ -35,9 +35,10 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:  app.startup,
-		OnShutdown: app.shutdown,
-		Menu:       appMenu,
+		OnStartup:     app.startup,
+		OnShutdown:    app.shutdown,
+		OnBeforeClose: app.beforeClose,
+		Menu:          appMenu,
 		Bind: []any{
 			app,
 		},
@@ -47,12 +48,15 @@ func main() {
 }
 
 func showAbout(app *App) {
-	runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
+	_, err := runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
 		Type:    runtime.InfoDialog,
 		Title:   "About dia",
 		Message: fmt.Sprintf("dia %s\nA Mermaid diagram editor\n\nby Roberto Selbach", version),
 		Icon:    appIcon,
 	})
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "about dialog error: %v", err)
+	}
 }
 
 // buildMenu constructs the application menu.
@@ -90,6 +94,8 @@ func buildMenu(app *App) *menu.Menu {
 	fileMenu.AddText("Open...", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(app.ctx, "file:open-request")
 	})
+	openRecentMenu := fileMenu.AddSubmenu("Open Recent")
+	app.initRecentMenu(openRecentMenu)
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Save", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(app.ctx, "file:save")

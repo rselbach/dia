@@ -11,8 +11,9 @@ import DOMPurify from "dompurify";
 
 import { load as loadSettings, save as saveSettings, mermaidConfig, themeEntry, THEME_OPTIONS } from "./settings.js";
 import { getAvailableFonts, groupByCategory } from "./fonts.js";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { EventsOn, Quit } from "../wailsjs/runtime/runtime";
 import {
+    AllowCloseOnce,
     OpenFile,
     SaveWithContent,
     SaveAsWithContent,
@@ -284,6 +285,17 @@ function setEditorContent(text) {
     scheduleRender();
 }
 
+function applyOpenResult(result) {
+    if (!result) return;
+    if (result.error) {
+        showError(result.error);
+        return;
+    }
+    if (!result.filePath) return;
+    setEditorContent(result.content ?? "");
+    clearError();
+}
+
 // New file
 EventsOn("file:new", async () => {
     const ok = await ConfirmDiscard();
@@ -297,13 +309,11 @@ EventsOn("file:open-request", async () => {
     if (!ok) return;
 
     const result = await OpenFile();
-    if (result.error) {
-        showError(result.error);
-        return;
-    }
-    if (result.content !== undefined && result.content !== "") {
-        setEditorContent(result.content);
-    }
+    applyOpenResult(result);
+});
+
+EventsOn("file:opened", (result) => {
+    applyOpenResult(result);
 });
 
 // Save
@@ -321,6 +331,23 @@ EventsOn("file:save-as", async () => {
     const result = await SaveAsWithContent(content);
     if (result.error) {
         showError(result.error);
+    }
+});
+
+EventsOn("app:save-and-quit", async () => {
+    const content = editor.state.doc.toString();
+    const result = await SaveWithContent(content);
+    if (result.error) {
+        showError(result.error);
+        return;
+    }
+    if (!result.filePath) return;
+
+    try {
+        await AllowCloseOnce();
+        Quit();
+    } catch (err) {
+        showError(`Quit failed: ${err.message || err}`);
     }
 });
 
