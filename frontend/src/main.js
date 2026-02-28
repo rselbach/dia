@@ -9,7 +9,7 @@ import { mermaid as mermaidLang } from "codemirror-lang-mermaid";
 import mermaid from "mermaid";
 import DOMPurify from "dompurify";
 
-import { load as loadSettings, save as saveSettings, FONT_OPTIONS, THEME_OPTIONS } from "./settings.js";
+import { load as loadSettings, save as saveSettings, mermaidConfig, themeEntry, FONT_OPTIONS, THEME_OPTIONS } from "./settings.js";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import {
     OpenFile,
@@ -33,27 +33,26 @@ function fontTheme(family, size) {
 }
 
 const fontCompartment = new Compartment();
+const previewPane = document.getElementById("preview-pane");
+
+function applyTheme(themeValue) {
+    mermaid.initialize(mermaidConfig(themeValue));
+    previewPane.style.background = themeEntry(themeValue).previewBg || "#ffffff";
+    renderDiagram();
+}
 
 function applySettings(s) {
     currentSettings = s;
     editor.dispatch({
         effects: fontCompartment.reconfigure(fontTheme(s.fontFamily, s.fontSize)),
     });
-    mermaid.initialize({
-        startOnLoad: false,
-        theme: s.diagramTheme,
-        securityLevel: "strict",
-    });
-    renderDiagram();
+    applyTheme(s.diagramTheme);
 }
 
 // -- Mermaid init ----------------------------------------------------------
 
-mermaid.initialize({
-    startOnLoad: false,
-    theme: currentSettings.diagramTheme,
-    securityLevel: "strict",
-});
+mermaid.initialize(mermaidConfig(currentSettings.diagramTheme));
+previewPane.style.background = themeEntry(currentSettings.diagramTheme).previewBg || "#ffffff";
 
 // -- Default content -------------------------------------------------------
 
@@ -224,9 +223,8 @@ copyPngBtn.addEventListener("click", async () => {
     if (!svgEl) return;
 
     try {
-        const blob = await svgToPngBlob(svgEl);
         await navigator.clipboard.write([
-            new ClipboardItem({ "image/png": blob }),
+            new ClipboardItem({ "image/png": svgToPngBlob(svgEl) }),
         ]);
     } catch (err) {
         showError(`Copy failed: ${err.message || err}`);
@@ -258,7 +256,7 @@ function svgToPngBlob(svgEl) {
             canvas.width = w;
             canvas.height = h;
             const ctx = canvas.getContext("2d");
-            ctx.fillStyle = "#ffffff";
+            ctx.fillStyle = previewPane.style.background || "#ffffff";
             ctx.fillRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0, w, h);
             canvas.toBlob((blob) => {
@@ -327,12 +325,7 @@ EventsOn("file:save-as", async () => {
 
 // Live theme switch (temporary, doesn't persist)
 EventsOn("theme:set", (theme) => {
-    mermaid.initialize({
-        startOnLoad: false,
-        theme: theme,
-        securityLevel: "strict",
-    });
-    renderDiagram();
+    applyTheme(theme);
 });
 
 // -- Settings modal --------------------------------------------------------

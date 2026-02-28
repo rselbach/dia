@@ -78,9 +78,21 @@ func buildMenu(app *App) *menu.Menu {
 
 	viewMenu := appMenu.AddSubmenu("View")
 	themeMenu := viewMenu.AddSubmenu("Theme")
-	for _, t := range []string{"default", "dark", "forest", "neutral"} {
-		theme := t
-		themeMenu.AddText(theme, nil, func(_ *menu.CallbackData) {
+	for _, t := range []struct{ value, label string }{
+		{"default", "Default"},
+		{"dark", "Dark"},
+		{"forest", "Forest"},
+		{"neutral", "Neutral"},
+		{"catppuccin", "Catppuccin"},
+		{"dracula", "Dracula"},
+		{"nord", "Nord"},
+		{"synthwave", "Synthwave"},
+		{"rose", "Rose"},
+		{"ocean", "Ocean"},
+		{"solarized", "Solarized"},
+	} {
+		theme := t.value
+		themeMenu.AddText(t.label, nil, func(_ *menu.CallbackData) {
 			runtime.EventsEmit(app.ctx, "theme:set", theme)
 		})
 	}
