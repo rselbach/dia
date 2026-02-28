@@ -81,11 +81,112 @@ jobs:
 
           tar -czf "${staging}.tar.gz" "${staging}"
 
-      # ── macOS packaging ──────────────────────────────────────────────
-      - name: Package (macOS)
+      # ── macOS signing + DMG ──────────────────────────────────────────
+      - name: Import signing certificate (macOS)
         if: runner.os == 'macOS'
-        working-directory: build/bin
-        run: zip -r ../../dia-darwin-universal.zip dia.app
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+
+          echo "${APPLE_CERTIFICATE_P12}" | base64 --decode > "${CERT_PATH}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+
+          security import "${CERT_PATH}" \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "${KEYCHAIN_PATH}"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -k "${KEYCHAIN_PASSWORD}" \
+            "${KEYCHAIN_PATH}"
+
+          security list-keychains -d user -s "${KEYCHAIN_PATH}" login.keychain-db
+
+          # Extract signing identity from the imported cert
+          IDENTITY=$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}" \
+            | grep "Developer ID Application" | head -1 \
+            | sed 's/.*"\(.*\)"/\1/')
+          echo "CODESIGN_IDENTITY=${IDENTITY}" >> "${GITHUB_ENV}"
+
+      - name: Sign app bundle (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP="build/bin/dia.app"
+          ENTITLEMENTS="build/darwin/entitlements.plist"
+
+          # Sign nested code first (frameworks, helpers, dylibs)
+          find "${APP}/Contents" -type f \( -name "*.dylib" -o -name "*.framework" -o -perm +111 \) \
+            ! -path "*/MacOS/dia" \
+            -exec codesign --force --options runtime \
+              --entitlements "${ENTITLEMENTS}" \
+              --sign "${CODESIGN_IDENTITY}" \
+              --timestamp {} \;
+
+          # Sign main executable
+          codesign --force --options runtime \
+            --entitlements "${ENTITLEMENTS}" \
+            --sign "${CODESIGN_IDENTITY}" \
+            --timestamp \
+            "${APP}/Contents/MacOS/dia"
+
+          # Sign outer bundle
+          codesign --force --options runtime \
+            --entitlements "${ENTITLEMENTS}" \
+            --sign "${CODESIGN_IDENTITY}" \
+            --timestamp \
+            "${APP}"
+
+          codesign --verify --deep --strict "${APP}"
+
+      - name: Create DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          DMG_STAGING="$RUNNER_TEMP/dmg-staging"
+          mkdir -p "${DMG_STAGING}"
+          cp -R build/bin/dia.app "${DMG_STAGING}/"
+          ln -s /Applications "${DMG_STAGING}/Applications"
+
+          hdiutil create -volname "dia" \
+            -srcfolder "${DMG_STAGING}" \
+            -ov -format UDZO \
+            "dia-darwin-universal.dmg"
+
+      - name: Sign DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force \
+            --sign "${CODESIGN_IDENTITY}" \
+            --timestamp \
+            "dia-darwin-universal.dmg"
+
+      - name: Notarize DMG (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit "dia-darwin-universal.dmg" \
+            --apple-id "${APPLE_ID}" \
+            --password "${APPLE_ID_PASSWORD}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --wait
+
+          xcrun stapler staple "dia-darwin-universal.dmg"
+
+      - name: Clean up keychain (macOS)
+        if: runner.os == 'macOS' && always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
 
       # ── Windows packaging ────────────────────────────────────────────
       - name: Package (Windows)
@@ -113,5 +214,5 @@ jobs:
           generate_release_notes: true
           files: |
             dia-linux-amd64.tar.gz
-            dia-darwin-universal.zip
+            dia-darwin-universal.dmg
             dia-windows-amd64.zip
