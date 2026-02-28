@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dia</title>
+</head>
+<body>
+    <div id="app">
+        <div id="editor-pane"></div>
+        <div id="splitter"></div>
+        <div id="preview-pane">
+            <div id="preview"></div>
+            <div id="error-bar" class="hidden"></div>
+        </div>
+    </div>
+    <div id="settings-overlay" class="hidden">
+        <div id="settings-modal">
+            <h2>Settings</h2>
+            <label>
+                Font Family
+                <select id="set-font-family"></select>
+            </label>
+            <label>
+                Font Size
+                <input id="set-font-size" type="number" min="10" max="24" />
+            </label>
+            <label>
+                Diagram Theme
+                <select id="set-diagram-theme"></select>
+            </label>
+            <div class="modal-buttons">
+                <button id="settings-cancel">Cancel</button>
+                <button id="settings-save">Save</button>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
