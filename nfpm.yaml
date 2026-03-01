@@ -1,0 +1,46 @@
+name: dia
+arch: amd64
+platform: linux
+version: "${VERSION}"
+maintainer: "Roberto Selbach <rselbach@rselbach.com>"
+description: "A Mermaid diagram editor with live preview"
+homepage: "https://github.com/rselbach/dia"
+license: MIT
+contents:
+  - src: build/bin/dia
+    dst: /usr/bin/dia
+  - src: build/linux/dia.desktop
+    dst: /usr/share/applications/dia.desktop
+  - src: build/linux/com.github.rselbach.dia.metainfo.xml
+    dst: /usr/share/metainfo/com.github.rselbach.dia.metainfo.xml
+  - src: build/linux/x-mermaid.xml
+    dst: /usr/share/mime/packages/x-mermaid.xml
+  - src: build/linux/icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/dia.svg
+  - src: build/linux/icon-16x16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/dia.png
+  - src: build/linux/icon-32x32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/dia.png
+  - src: build/linux/icon-48x48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/dia.png
+  - src: build/linux/icon-64x64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/dia.png
+  - src: build/linux/icon-128x128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/dia.png
+  - src: build/linux/icon-256x256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/dia.png
+  - src: build/linux/icon-512x512.png
+    dst: /usr/share/icons/hicolor/512x512/apps/dia.png
+depends:
+  deb:
+    - libgtk-3-0
+    - libwebkit2gtk-4.1-0
+  rpm:
+    - gtk3
+    - webkit2gtk4.1
+  archlinux:
+    - gtk3
+    - webkit2gtk-4.1
+scripts:
+  postinstall: build/linux/postinstall.sh
+  postremove: build/linux/postremove.sh

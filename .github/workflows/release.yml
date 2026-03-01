@@ -81,6 +81,20 @@ jobs:
 
           tar -czf "${staging}.tar.gz" "${staging}"
 
+      - name: Install nfpm
+        if: runner.os == 'Linux'
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build native packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          export VERSION
+
+          nfpm pkg --packager deb --target dia-linux-amd64.deb
+          nfpm pkg --packager rpm --target dia-linux-amd64.rpm
+          nfpm pkg --packager archlinux --target dia-linux-amd64.pkg.tar.zst
+
       # ── macOS signing + DMG ──────────────────────────────────────────
       - name: Import signing certificate (macOS)
         if: runner.os == 'macOS'
@@ -197,7 +211,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.*
+          path: |
+            ${{ matrix.artifact }}.*
+            dia-linux-amd64.deb
+            dia-linux-amd64.rpm
+            dia-linux-amd64.pkg.tar.zst
 
   release:
     needs: build
@@ -214,4 +232,7 @@ jobs:
           generate_release_notes: true
           files: |
             dia-linux-amd64.tar.gz
+            dia-linux-amd64.deb
+            dia-linux-amd64.rpm
+            dia-linux-amd64.pkg.tar.zst
             dia-darwin-universal.dmg
