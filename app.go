@@ -25,6 +25,7 @@ type FileResult struct {
 // App holds application state and exposes methods to the frontend.
 type App struct {
 	ctx         context.Context
+	version     string
 	currentFile string
 	dirty       bool
 	allowClose  bool
@@ -32,6 +33,9 @@ type App struct {
 	recentPath  string
 	recentMenu  *menu.Menu
 }
+
+// GetVersion returns the build version string.
+func (a *App) GetVersion() string { return a.version }
 
 func NewApp() *App {
 	return &App{}

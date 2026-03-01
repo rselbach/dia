@@ -204,3 +204,61 @@ html, body {
     background: #74c7ec;
     border-color: #74c7ec;
 }
+
+/* About modal */
+#about-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+#about-overlay:focus {
+    outline: none;
+}
+
+#about-overlay.hidden {
+    display: none;
+}
+
+#about-modal {
+    background: #1e1e2e;
+    border: 1px solid #45475a;
+    border-radius: 10px;
+    padding: 2rem;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    text-align: center;
+    color: #cdd6f4;
+}
+
+#about-icon {
+    width: 96px;
+    height: 96px;
+    margin-bottom: 0.5rem;
+}
+
+#about-modal h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+#about-modal p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #a6adc8;
+}
+
+.about-author {
+    margin-top: 0.5rem;
+}
+
+#about-modal .modal-buttons {
+    margin-top: 1rem;
+}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	goruntime "runtime"
 
 	"github.com/wailsapp/wails/v2"
@@ -10,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -24,6 +24,7 @@ var appIcon []byte
 
 func main() {
 	app := NewApp()
+	app.version = version
 	appMenu := buildMenu(app)
 
 	if err := wails.Run(&options.App{
@@ -32,6 +33,10 @@ func main() {
 		Height:    800,
 		MinWidth:  800,
 		MinHeight: 600,
+		Linux: &linux.Options{
+			Icon:             appIcon,
+			WebviewGpuPolicy: linux.WebviewGpuPolicyNever,
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -48,15 +53,7 @@ func main() {
 }
 
 func showAbout(app *App) {
-	_, err := runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.InfoDialog,
-		Title:   "About dia",
-		Message: fmt.Sprintf("dia %s\nA Mermaid diagram editor\n\nby Roberto Selbach", version),
-		Icon:    appIcon,
-	})
-	if err != nil {
-		runtime.LogErrorf(app.ctx, "about dialog error: %v", err)
-	}
+	runtime.EventsEmit(app.ctx, "about:open")
 }
 
 // buildMenu constructs the application menu.

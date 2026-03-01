@@ -14,6 +14,7 @@ import { getAvailableFonts, groupByCategory } from "./fonts.js";
 import { EventsOn, Quit } from "../wailsjs/runtime/runtime";
 import {
     AllowCloseOnce,
+    GetVersion,
     OpenFile,
     SaveWithContent,
     SaveAsWithContent,
@@ -416,3 +417,27 @@ document.getElementById("settings-save").addEventListener("click", () => {
 });
 
 EventsOn("settings:open", openSettings);
+
+// -- About modal -----------------------------------------------------------
+
+const aboutOverlay = document.getElementById("about-overlay");
+
+async function openAbout() {
+    document.getElementById("about-version").textContent = await GetVersion();
+    aboutOverlay.classList.remove("hidden");
+    aboutOverlay.focus();
+}
+
+function closeAbout() {
+    aboutOverlay.classList.add("hidden");
+}
+
+document.getElementById("about-close").addEventListener("click", closeAbout);
+aboutOverlay.addEventListener("click", (e) => {
+    if (e.target === aboutOverlay) closeAbout();
+});
+aboutOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" || e.key === "Enter") closeAbout();
+});
+
+EventsOn("about:open", openAbout);
