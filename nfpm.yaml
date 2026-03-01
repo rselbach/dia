@@ -31,16 +31,19 @@ contents:
     dst: /usr/share/icons/hicolor/256x256/apps/dia.png
   - src: build/linux/icon-512x512.png
     dst: /usr/share/icons/hicolor/512x512/apps/dia.png
-depends:
+overrides:
   deb:
-    - libgtk-3-0
-    - libwebkit2gtk-4.1-0
+    depends:
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
   rpm:
-    - gtk3
-    - webkit2gtk4.1
+    depends:
+      - gtk3
+      - webkit2gtk4.1
   archlinux:
-    - gtk3
-    - webkit2gtk-4.1
+    depends:
+      - gtk3
+      - webkit2gtk-4.1
 scripts:
   postinstall: build/linux/postinstall.sh
   postremove: build/linux/postremove.sh
