@@ -1,0 +1,98 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "DiaCoreFFI-arm64-apple-macosx26.0-debug.module": ["<DiaCoreFFI-arm64-apple-macosx26.0-debug.module>"]
+  "DiaMac-arm64-apple-macosx26.0-debug.module": ["<DiaMac-arm64-apple-macosx26.0-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "dia-macos-ui-arm64-apple-macosx26.0-debug.exe": ["<dia-macos-ui-arm64-apple-macosx26.0-debug.exe>"]
+  "main": ["<DiaCoreFFI-arm64-apple-macosx26.0-debug.module>","<DiaMac-arm64-apple-macosx26.0-debug.module>","<dia-macos-ui-arm64-apple-macosx26.0-debug.exe>"]
+  "test": ["<DiaCoreFFI-arm64-apple-macosx26.0-debug.module>","<DiaMac-arm64-apple-macosx26.0-debug.module>","<dia-macos-ui-arm64-apple-macosx26.0-debug.exe>"]
+default: "main"
+nodes:
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui":
+    is-mutated: true
+commands:
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o":
+    tool: clang
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/shim.c"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o"]
+    description: "Compiling DiaCoreFFI shim.c"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang","-fobjc-arc","-target","arm64-apple-macosx13.0","-O0","-DSWIFT_PACKAGE=1","-DDEBUG=1","-fblocks","-index-store-path","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/index/store","-fmodules","-fmodule-name=DiaCoreFFI","-fmodules-cache-path=/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/ModuleCache","-I","/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/include","-isysroot","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-fPIC","-g","-MD","-MT","dependencies","-MF","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.d","-c","/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/shim.c","-o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o"]
+    deps: "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.d"
+
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/AppState.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaCoreBridge.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaMacApp.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/EditorView.swift"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/sources"]
+    description: "Write auxiliary file /Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/sources"
+
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui-entitlement.plist"]
+    description: "Write auxiliary file /Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui-entitlement.plist"
+
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swift.o"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui.product/Objects.LinkFileList"
+
+  "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<DiaCoreFFI-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o"]
+    outputs: ["<DiaCoreFFI-arm64-apple-macosx26.0-debug.module>"]
+
+  "<DiaMac-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/Modules/DiaMac.swiftmodule"]
+    outputs: ["<DiaMac-arm64-apple-macosx26.0-debug.module>"]
+
+  "<dia-macos-ui-arm64-apple-macosx26.0-debug.exe>":
+    tool: phony
+    inputs: ["<dia-macos-ui-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    outputs: ["<dia-macos-ui-arm64-apple-macosx26.0-debug.exe>"]
+
+  "C.DiaMac-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/AppState.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaCoreBridge.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaMacApp.swift","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/EditorView.swift","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/sources"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/Modules/DiaMac.swiftmodule"]
+    description: "Compiling Swift Module 'DiaMac' (4 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","DiaMac","-emit-dependencies","-emit-module","-emit-module-path","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/Modules/DiaMac.swiftmodule","-output-file-map","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/output-file-map.json","-incremental","-c","@/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/sources","-I","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-Xcc","-fmodule-map-file=/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/module.modulemap","-Xcc","-I","-Xcc","/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/include","-module-cache-path","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","DiaMac_main","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","macos_ui"]
+
+  "C.dia-macos-ui-arm64-apple-macosx26.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaCoreFFI.build/shim.c.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swift.o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui.product/Objects.LinkFileList"]
+    outputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/dia-macos-ui"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug","-o","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui","-module-name","dia_macos_ui","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_DiaMac_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui.product/Objects.LinkFileList","-target","arm64-apple-macosx13.0","-ldia_core","-framework","AppKit","-framework","WebKit","-L","../core/target/release","-Xlinker","-add_ast_path","-Xlinker","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/Modules/DiaMac.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.dia-macos-ui-arm64-apple-macosx26.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui-entitlement.plist"]
+    outputs: ["<dia-macos-ui-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/dia-macos-ui"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui-entitlement.plist","/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/dia-macos-ui"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/","/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/","/Users/rselbach/devel/dia/macos-ui/Package.swift","/Users/rselbach/devel/dia/macos-ui/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

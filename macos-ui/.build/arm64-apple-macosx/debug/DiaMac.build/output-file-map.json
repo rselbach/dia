@@ -1,0 +1,33 @@
+{
+  "": {
+    "swift-dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/master.swiftdeps"
+  },
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/AppState.swift": {
+    "dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.d",
+    "object": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swift.o",
+    "swiftmodule": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState~partial.swiftmodule",
+    "swift-dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.swiftdeps",
+    "diagnostics": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/AppState.dia"
+  },
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaCoreBridge.swift": {
+    "dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.d",
+    "object": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swift.o",
+    "swiftmodule": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge~partial.swiftmodule",
+    "swift-dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.swiftdeps",
+    "diagnostics": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaCoreBridge.dia"
+  },
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/DiaMacApp.swift": {
+    "dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.d",
+    "object": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swift.o",
+    "swiftmodule": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.swiftdeps",
+    "diagnostics": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/DiaMacApp.dia"
+  },
+  "/Users/rselbach/devel/dia/macos-ui/Sources/DiaMac/EditorView.swift": {
+    "dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.d",
+    "object": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swift.o",
+    "swiftmodule": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView~partial.swiftmodule",
+    "swift-dependencies": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.swiftdeps",
+    "diagnostics": "/Users/rselbach/devel/dia/macos-ui/.build/arm64-apple-macosx/debug/DiaMac.build/EditorView.dia"
+  }
+}

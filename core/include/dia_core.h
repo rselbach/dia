@@ -24,6 +24,7 @@ DiaCore *dia_core_new(uint32_t max_recent_files);
 void dia_core_free(DiaCore *core);
 
 DiaResult dia_core_open_file(DiaCore *core, const char *path);
+DiaResult dia_core_new_document(DiaCore *core);
 DiaResult dia_core_save(DiaCore *core, const char *content);
 DiaResult dia_core_save_as(DiaCore *core, const char *path, const char *content);
 

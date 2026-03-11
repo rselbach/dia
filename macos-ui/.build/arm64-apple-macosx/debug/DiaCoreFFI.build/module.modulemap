@@ -1,0 +1,4 @@
+module DiaCoreFFI {
+    umbrella "/Users/rselbach/devel/dia/macos-ui/Sources/DiaCoreFFI/include"
+    export *
+}

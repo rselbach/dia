@@ -338,6 +338,15 @@ pub extern "C" fn dia_core_open_file(core: *mut DiaCore, path: *const c_char) ->
 }
 
 #[no_mangle]
+pub extern "C" fn dia_core_new_document(core: *mut DiaCore) -> DiaResult {
+    ffi_call(|| {
+        let core = unsafe { core.as_mut() }.ok_or(CoreError::NullPointer("core"))?;
+        core.new_document();
+        Ok(DiaResult::ok_empty())
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn dia_core_save(core: *mut DiaCore, content: *const c_char) -> DiaResult {
     ffi_call(|| {
         let content = c_arg_to_string(content, "content")?;
