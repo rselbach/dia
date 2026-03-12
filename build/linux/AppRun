@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# AppRun -- launch dia inside an AppImage with WebKit helper paths set.
+
+set -euo pipefail
+
+locate_webkit_dir() {
+  local root_dir="${1}"
+  local candidates=()
+
+  shopt -s nullglob
+  candidates=(
+    "${root_dir}/usr/lib/webkitgtk-6.0"
+    "${root_dir}/usr/lib"/*/webkitgtk-6.0
+  )
+  shopt -u nullglob
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -d "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+main() {
+  local self_dir
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  local webkit_dir=""
+  if webkit_dir="$(locate_webkit_dir "${self_dir}")"; then
+    export WEBKIT_EXEC_PATH="${webkit_dir}"
+
+    if [[ -d "${webkit_dir}/injected-bundle" ]]; then
+      export WEBKIT_INJECTED_BUNDLE_PATH="${webkit_dir}/injected-bundle"
+    fi
+  fi
+
+  exec "${self_dir}/usr/bin/dia" "$@"
+}
+
+main "$@"

@@ -156,6 +156,7 @@ impl UiState {
         status.set_wrap(true);
 
         let app_setup = load_app_setup(&editor);
+        let (preview_base_uri, mermaid_startup_error) = load_mermaid_vendor_base_uri();
         let editor_css_provider = gtk::CssProvider::new();
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
@@ -171,6 +172,11 @@ impl UiState {
 
         window.set_child(Some(&root));
 
+        let mut startup_errors = app_setup.startup_errors;
+        if let Some(err) = mermaid_startup_error {
+            startup_errors.push(err);
+        }
+
         let state = Rc::new(Self {
             core: RefCell::new(DiaCore::new(10)),
             window,
@@ -179,12 +185,12 @@ impl UiState {
             editor_css_provider,
             preview,
             status,
-            preview_base_uri: mermaid_vendor_base_uri(),
+            preview_base_uri,
             available_themes: app_setup.themes,
             available_fonts: app_setup.fonts,
             preferences: RefCell::new(app_setup.preferences),
             preview_theme: RefCell::new(app_setup.preview_theme),
-            startup_errors: app_setup.startup_errors,
+            startup_errors,
             render_timer: RefCell::new(None),
             highlight_timer: RefCell::new(None),
             suppress_dirty_signal: Cell::new(false),
@@ -933,31 +939,58 @@ fn config_root() -> Result<PathBuf, String> {
     Ok(config_root)
 }
 
-fn mermaid_bundle_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("vendor")
-        .join(MERMAID_BUNDLE_NAME)
+fn mermaid_vendor_dir_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(executable_dir) = executable.parent() {
+            candidates.push(executable_dir.join("vendor"));
+
+            if let Some(prefix_dir) = executable_dir.parent() {
+                candidates.push(prefix_dir.join("share").join("dia").join("vendor"));
+            }
+        }
+    }
+
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor"));
+    candidates
 }
 
-fn mermaid_vendor_base_uri() -> String {
-    let vendor_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor");
+fn mermaid_vendor_dir() -> Result<PathBuf, String> {
+    for candidate in mermaid_vendor_dir_candidates() {
+        if candidate.join(MERMAID_BUNDLE_NAME).is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    let searched_paths = mermaid_vendor_dir_candidates()
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(format!(
+        "missing Mermaid bundle '{}' in searched paths: {}",
+        MERMAID_BUNDLE_NAME, searched_paths
+    ))
+}
+
+fn load_mermaid_vendor_base_uri() -> (String, Option<String>) {
+    let vendor_dir = mermaid_vendor_dir().unwrap_or_else(|_| {
+        mermaid_vendor_dir_candidates()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor"))
+    });
+    let error = ensure_mermaid_bundle_exists().err();
     let mut uri = gtk::gio::File::for_path(vendor_dir).uri().to_string();
     if !uri.ends_with('/') {
         uri.push('/');
     }
-    uri
+    (uri, error)
 }
 
 fn ensure_mermaid_bundle_exists() -> Result<(), String> {
-    let bundle_path = mermaid_bundle_path();
-    if bundle_path.is_file() {
-        return Ok(());
-    }
-
-    Err(format!(
-        "missing vendored Mermaid bundle: {}",
-        bundle_path.display()
-    ))
+    mermaid_vendor_dir().map(|_| ())
 }
 
 fn cancel_timer(timer: &RefCell<Option<gtk::glib::SourceId>>) {

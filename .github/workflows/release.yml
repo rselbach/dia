@@ -9,230 +9,93 @@ permissions:
   contents: write
 
 env:
-  NODE_OPTIONS: "--max-old-space-size=4096"
-  WAILS_VERSION: "v2.11.0"
-  GO_VERSION: "1.23"
-  NODE_VERSION: "20"
+  GO_VERSION: "1.24"
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux/amd64
-            artifact: dia-linux-amd64
-          - os: macos-latest
-            platform: darwin/universal
-            artifact: dia-darwin-universal
-          # - os: windows-latest
-          #   platform: windows/amd64
-          #   artifact: dia-windows-amd64
-
-    runs-on: ${{ matrix.os }}
+  linux:
+    name: Build Linux Release Artifacts
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
-      - name: Build
-        run: wails build -clean -trimpath -ldflags "-X main.version=${{ github.ref_name }}"
-
-      # ── Linux packaging ──────────────────────────────────────────────
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          staging="dia-linux-amd64"
-          mkdir -p "${staging}/icons"
-
-          cp build/bin/dia                                        "${staging}/"
-          cp build/linux/dia.desktop                              "${staging}/"
-          cp build/linux/icon.svg                                 "${staging}/icons/dia.svg"
-          cp build/linux/com.github.rselbach.dia.metainfo.xml     "${staging}/"
-          cp build/linux/x-mermaid.xml                            "${staging}/"
-
-          for png in build/linux/icon-*.png; do
-            size=$(echo "${png}" | grep -oP '\d+x\d+')
-            cp "${png}" "${staging}/icons/dia-${size}.png"
-          done
-
-          cp build/linux/install.sh "${staging}/"
-          chmod +x "${staging}/install.sh"
-
-          tar -czf "${staging}.tar.gz" "${staging}"
+          sudo apt-get install -y \
+            appstream \
+            build-essential \
+            curl \
+            desktop-file-utils \
+            file \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            patchelf \
+            pkg-config
 
       - name: Install nfpm
-        if: runner.os == 'Linux'
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
-      - name: Build native packages (Linux)
-        if: runner.os == 'Linux'
+      - name: Download linuxdeploy tools
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          export VERSION
+          mkdir -p "$RUNNER_TEMP/linuxdeploy"
+          curl -fsSL \
+            -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy" \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          curl -fsSL \
+            -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-gtk" \
+            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x "$RUNNER_TEMP/linuxdeploy/linuxdeploy"
+          chmod +x "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-gtk"
 
-          nfpm pkg --packager deb --target dia-linux-amd64.deb
-          nfpm pkg --packager rpm --target dia-linux-amd64.rpm
-          nfpm pkg --packager archlinux --target dia-linux-amd64.pkg.tar.zst
+      - name: Run tests
+        run: |
+          cargo test --manifest-path syntax/Cargo.toml
+          cargo test --manifest-path core/Cargo.toml
+          cargo test --manifest-path linux-ui/Cargo.toml
 
-      # ── macOS signing + DMG ──────────────────────────────────────────
-      - name: Import signing certificate (macOS)
-        if: runner.os == 'macOS'
+      - name: Build Linux UI release binary
+        run: cargo build --release --manifest-path linux-ui/Cargo.toml
+
+      - name: Package Linux release artifacts
         env:
-          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          LINUXDEPLOY: ${{ runner.temp }}/linuxdeploy/linuxdeploy
         run: |
-          CERT_PATH="$RUNNER_TEMP/certificate.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          export PATH="$RUNNER_TEMP/linuxdeploy:$PATH"
+          bash build/linux/package-release.sh \
+            --version "${GITHUB_REF_NAME#v}" \
+            --binary "linux-ui/target/release/dia_linux_ui" \
+            --output-dir "dist"
 
-          echo "${APPLE_CERTIFICATE_P12}" | base64 --decode > "${CERT_PATH}"
-
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-
-          security import "${CERT_PATH}" \
-            -P "${APPLE_CERTIFICATE_PASSWORD}" \
-            -A \
-            -t cert \
-            -f pkcs12 \
-            -k "${KEYCHAIN_PATH}"
-
-          security set-key-partition-list \
-            -S apple-tool:,apple: \
-            -k "${KEYCHAIN_PASSWORD}" \
-            "${KEYCHAIN_PATH}"
-
-          security list-keychains -d user -s "${KEYCHAIN_PATH}" login.keychain-db
-
-          # Extract signing identity from the imported cert
-          IDENTITY=$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}" \
-            | grep "Developer ID Application" | head -1 \
-            | sed 's/.*"\(.*\)"/\1/')
-          echo "CODESIGN_IDENTITY=${IDENTITY}" >> "${GITHUB_ENV}"
-
-      - name: Sign app bundle (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          APP="build/bin/dia.app"
-          ENTITLEMENTS="build/darwin/entitlements.plist"
-
-          # Sign nested code first (frameworks, helpers, dylibs)
-          find "${APP}/Contents" -type f \( -name "*.dylib" -o -name "*.framework" -o -perm +111 \) \
-            ! -path "*/MacOS/dia" \
-            -exec codesign --force --options runtime \
-              --entitlements "${ENTITLEMENTS}" \
-              --sign "${CODESIGN_IDENTITY}" \
-              --timestamp {} \;
-
-          # Sign main executable
-          codesign --force --options runtime \
-            --entitlements "${ENTITLEMENTS}" \
-            --sign "${CODESIGN_IDENTITY}" \
-            --timestamp \
-            "${APP}/Contents/MacOS/dia"
-
-          # Sign outer bundle
-          codesign --force --options runtime \
-            --entitlements "${ENTITLEMENTS}" \
-            --sign "${CODESIGN_IDENTITY}" \
-            --timestamp \
-            "${APP}"
-
-          codesign --verify --deep --strict "${APP}"
-
-      - name: Create DMG (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          DMG_STAGING="$RUNNER_TEMP/dmg-staging"
-          mkdir -p "${DMG_STAGING}"
-          cp -R build/bin/dia.app "${DMG_STAGING}/"
-          ln -s /Applications "${DMG_STAGING}/Applications"
-
-          hdiutil create -volname "dia" \
-            -srcfolder "${DMG_STAGING}" \
-            -ov -format UDZO \
-            "dia-darwin-universal.dmg"
-
-      - name: Sign DMG (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          codesign --force \
-            --sign "${CODESIGN_IDENTITY}" \
-            --timestamp \
-            "dia-darwin-universal.dmg"
-
-      - name: Notarize DMG (macOS)
-        if: runner.os == 'macOS'
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          xcrun notarytool submit "dia-darwin-universal.dmg" \
-            --apple-id "${APPLE_ID}" \
-            --password "${APPLE_ID_PASSWORD}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --wait
-
-          xcrun stapler staple "dia-darwin-universal.dmg"
-
-      - name: Clean up keychain (macOS)
-        if: runner.os == 'macOS' && always()
-        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
-
-      # ── Windows packaging ────────────────────────────────────────────
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: Compress-Archive -Path build\bin\dia.exe -DestinationPath dia-windows-amd64.zip
-
-      - name: Upload artifact
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: |
-            ${{ matrix.artifact }}.*
-            dia-linux-amd64.deb
-            dia-linux-amd64.rpm
-            dia-linux-amd64.pkg.tar.zst
+          name: linux-release-artifacts
+          path: dist/*
 
   release:
-    needs: build
+    name: Publish GitHub Release
+    needs: linux
     runs-on: ubuntu-latest
+
     steps:
-      - name: Download artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
+          path: dist
           merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            dia-linux-amd64.tar.gz
-            dia-linux-amd64.deb
-            dia-linux-amd64.rpm
-            dia-linux-amd64.pkg.tar.zst
-            dia-darwin-universal.dmg
+          files: dist/*

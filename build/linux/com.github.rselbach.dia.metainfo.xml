@@ -15,9 +15,10 @@
     </p>
     <p>Features include:</p>
     <ul>
-      <li>CodeMirror-based editor with Mermaid syntax highlighting</li>
+      <li>Native GTK editor with Mermaid syntax highlighting</li>
       <li>Live diagram preview as you type</li>
       <li>Multiple built-in themes</li>
+      <li>Configurable editor font, size, and default diagram theme</li>
       <li>Native file open/save dialogs</li>
       <li>Support for .mmd and .mermaid file formats</li>
     </ul>

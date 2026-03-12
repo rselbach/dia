@@ -17,6 +17,8 @@ install -Dm644 "${SCRIPT_DIR}/com.github.rselbach.dia.metainfo.xml" \
   "${PREFIX}/share/metainfo/com.github.rselbach.dia.metainfo.xml"
 install -Dm644 "${SCRIPT_DIR}/x-mermaid.xml" \
   "${PREFIX}/share/mime/packages/x-mermaid.xml"
+install -Dm644 "${SCRIPT_DIR}/vendor/mermaid.min.js" \
+  "${PREFIX}/share/dia/vendor/mermaid.min.js"
 install -Dm644 "${SCRIPT_DIR}/icons/dia.svg" \
   "${PREFIX}/share/icons/hicolor/scalable/apps/dia.svg"
 
