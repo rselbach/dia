@@ -1,13 +1,14 @@
 use std::cell::{Cell, RefCell};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
 use dia_core::DiaCore;
-use dia_syntax::{auto_indent_insertion, highlight_spans, leading_indentation, HighlightKind};
+use dia_syntax::{auto_indent_insertion, highlight_spans, HighlightKind};
 use gtk::{Application, ApplicationWindow};
 use gtk4 as gtk;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use webkit6::prelude::*;
 use webkit6::{ContextMenuItem, SnapshotOptions, SnapshotRegion, WebView};
 
@@ -18,7 +19,7 @@ const TAG_MERMAID_OPERATOR: &str = "dia-mermaid-operator";
 const TAG_MERMAID_COMMENT: &str = "dia-mermaid-comment";
 const TAG_MERMAID_LABEL: &str = "dia-mermaid-label";
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct MermaidThemeInfo {
     id: String,
     label: String,
@@ -26,6 +27,25 @@ struct MermaidThemeInfo {
     preview_background: String,
     #[serde(rename = "errorColor")]
     error_color: String,
+}
+
+#[derive(Clone)]
+struct PreviewTheme {
+    info: MermaidThemeInfo,
+    mermaid_config_js: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct AppPreferences {
+    #[serde(rename = "defaultTheme")]
+    default_theme_id: String,
+}
+
+struct ThemeSetup {
+    themes: Vec<MermaidThemeInfo>,
+    selected_theme_id: String,
+    preview_theme: PreviewTheme,
+    startup_errors: Vec<String>,
 }
 
 fn main() {
@@ -41,6 +61,10 @@ struct UiState {
     preview: WebView,
     status: gtk::Label,
     preview_base_uri: String,
+    available_themes: Vec<MermaidThemeInfo>,
+    selected_theme_id: RefCell<String>,
+    preview_theme: RefCell<PreviewTheme>,
+    theme_startup_errors: Vec<String>,
     render_timer: RefCell<Option<gtk::glib::SourceId>>,
     highlight_timer: RefCell<Option<gtk::glib::SourceId>>,
     suppress_dirty_signal: Cell<bool>,
@@ -67,12 +91,17 @@ impl UiState {
         let export_png_button = gtk::Button::with_label("Export PNG");
         let save_button = gtk::Button::with_label("Save");
         let save_as_button = gtk::Button::with_label("Save As");
+        let theme_label = gtk::Label::new(Some("Theme"));
+        let theme_combo = gtk::ComboBoxText::new();
+        theme_combo.set_hexpand(false);
         toolbar.append(&new_button);
         toolbar.append(&open_button);
         toolbar.append(&open_recent_button);
         toolbar.append(&export_png_button);
         toolbar.append(&save_button);
         toolbar.append(&save_as_button);
+        toolbar.append(&theme_label);
+        toolbar.append(&theme_combo);
 
         let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         paned.set_wide_handle(true);
@@ -102,6 +131,12 @@ impl UiState {
         status.set_xalign(0.0);
         status.set_wrap(true);
 
+        let theme_setup = load_theme_setup();
+        for theme in &theme_setup.themes {
+            theme_combo.append(Some(&theme.id), &theme.label);
+        }
+        theme_combo.set_active_id(Some(&theme_setup.selected_theme_id));
+
         root.append(&toolbar);
         root.append(&paned);
         root.append(&status);
@@ -115,6 +150,10 @@ impl UiState {
             preview,
             status,
             preview_base_uri: mermaid_vendor_base_uri(),
+            available_themes: theme_setup.themes,
+            selected_theme_id: RefCell::new(theme_setup.selected_theme_id),
+            preview_theme: RefCell::new(theme_setup.preview_theme),
+            theme_startup_errors: theme_setup.startup_errors,
             render_timer: RefCell::new(None),
             highlight_timer: RefCell::new(None),
             suppress_dirty_signal: Cell::new(false),
@@ -220,16 +259,37 @@ impl UiState {
             });
         }
 
+        {
+            let ui = state.clone();
+            theme_combo.connect_changed(move |combo| {
+                let Some(theme_id) = combo.active_id() else {
+                    return;
+                };
+
+                ui.handle_theme_changed(theme_id.as_str());
+            });
+        }
+
         state
     }
 
     fn startup(&self) {
+        let mut startup_errors = Vec::new();
+
         if let Err(err) = ensure_mermaid_bundle_exists() {
-            self.set_error(err);
+            startup_errors.push(err);
         }
 
         if let Err(err) = self.load_recent_files() {
-            self.set_error(format!("failed to load recent files: {err}"));
+            startup_errors.push(format!("failed to load recent files: {err}"));
+        }
+
+        startup_errors.extend(self.theme_startup_errors.iter().cloned());
+
+        if startup_errors.is_empty() {
+            self.clear_status();
+        } else {
+            self.set_error(startup_errors.join(" | "));
         }
 
         self.schedule_render();
@@ -553,14 +613,40 @@ impl UiState {
         true
     }
 
+    fn handle_theme_changed(&self, theme_id: &str) {
+        let normalized_theme_id = DiaCore::normalize_theme_id(theme_id).to_string();
+        if *self.selected_theme_id.borrow() == normalized_theme_id {
+            return;
+        }
+
+        let Some(preview_theme) =
+            preview_theme_for_id(&self.available_themes, &normalized_theme_id)
+        else {
+            self.set_error(format!(
+                "theme '{}' is unavailable in the shared catalog",
+                normalized_theme_id
+            ));
+            return;
+        };
+
+        self.selected_theme_id.replace(normalized_theme_id.clone());
+        self.preview_theme.replace(preview_theme);
+        self.schedule_render();
+
+        if let Err(err) = save_theme_preference(&normalized_theme_id) {
+            self.set_error(format!("failed to save theme preference: {err}"));
+        }
+    }
+
     fn schedule_render(&self) {
         cancel_timer(&self.render_timer);
 
         let source = self.buffer_text();
         let preview = self.preview.clone();
         let base_uri = self.preview_base_uri.clone();
+        let preview_theme = self.preview_theme.borrow().clone();
         let source_id = gtk::glib::timeout_add_local(Duration::from_millis(250), move || {
-            preview.load_html(&diagram_html(&source), Some(&base_uri));
+            preview.load_html(&diagram_html(&source, &preview_theme), Some(&base_uri));
             gtk::glib::ControlFlow::Break
         });
 
@@ -616,10 +702,20 @@ impl UiState {
 }
 
 fn recent_files_path() -> Result<PathBuf, String> {
+    let config_root = config_root()?;
+    Ok(config_root.join("dia").join("recent-files.json"))
+}
+
+fn preferences_path() -> Result<PathBuf, String> {
+    let config_root = config_root()?;
+    Ok(config_root.join("dia").join("preferences.json"))
+}
+
+fn config_root() -> Result<PathBuf, String> {
     let Some(config_root) = dirs::config_dir() else {
         return Err("could not resolve user config directory".to_string());
     };
-    Ok(config_root.join("dia").join("recent-files.json"))
+    Ok(config_root)
 }
 
 fn mermaid_bundle_path() -> PathBuf {
@@ -756,16 +852,15 @@ fn apply_tag_range(buffer: &gtk::TextBuffer, tag_name: &str, start: i32, end: i3
     buffer.apply_tag(&tag, &start_iter, &end_iter);
 }
 
-fn diagram_html(source: &str) -> String {
-    let default_theme = default_theme_info();
+fn diagram_html(source: &str, preview_theme: &PreviewTheme) -> String {
     let source_json = match serde_json::to_string(source) {
         Ok(value) => value,
         Err(err) => {
             let escaped = html_escape(&format!("failed to encode source: {err}"));
             return format!(
                 "<!doctype html><html><body style='background:{}'><pre style='color:{}'>{escaped}</pre></body></html>",
-                default_theme.preview_background,
-                default_theme.error_color,
+                preview_theme.info.preview_background,
+                preview_theme.info.error_color,
             );
         }
     };
@@ -816,7 +911,7 @@ fn diagram_html(source: &str) -> String {
       if (typeof mermaid === "undefined") {{
         errorEl.textContent = "failed to load local Mermaid bundle";
       }} else {{
-      mermaid.initialize({{ startOnLoad: false, securityLevel: "strict", theme: "{}" }});
+      mermaid.initialize({});
 
       if (!source.trim()) {{
         diagramEl.textContent = "";
@@ -837,34 +932,134 @@ fn diagram_html(source: &str) -> String {
   </body>
     </html>
     "#,
-        default_theme.preview_background,
-        default_theme.error_color,
-        DiaCore::default_theme_id()
+        preview_theme.info.preview_background,
+        preview_theme.info.error_color,
+        preview_theme.mermaid_config_js
     )
 }
 
-fn default_theme_info() -> MermaidThemeInfo {
-    let fallback = MermaidThemeInfo {
-        id: "default".to_string(),
+fn load_theme_setup() -> ThemeSetup {
+    let theme_id = DiaCore::normalize_theme_id(DiaCore::default_theme_id()).to_string();
+    let mut startup_errors = Vec::new();
+
+    let themes = match load_theme_catalog() {
+        Ok(value) => value,
+        Err(err) => {
+            startup_errors.push(err);
+            vec![fallback_theme_info(&theme_id)]
+        }
+    };
+
+    let saved_theme_id = match load_theme_preference() {
+        Ok(value) => value,
+        Err(err) => {
+            startup_errors.push(err);
+            None
+        }
+    };
+
+    let preferred_theme_id = saved_theme_id.unwrap_or_else(|| theme_id.clone());
+    let normalized_theme_id = DiaCore::normalize_theme_id(&preferred_theme_id).to_string();
+    let selected_theme_id = if themes.iter().any(|theme| theme.id == normalized_theme_id) {
+        normalized_theme_id
+    } else {
+        startup_errors.push(format!(
+            "shared theme catalog is missing theme '{}'",
+            normalized_theme_id
+        ));
+        theme_id
+    };
+
+    let preview_theme = preview_theme_for_id(&themes, &selected_theme_id).unwrap_or_else(|| {
+        startup_errors.push(format!(
+            "failed to build preview theme for '{}'",
+            selected_theme_id
+        ));
+        PreviewTheme {
+            info: fallback_theme_info(&selected_theme_id),
+            mermaid_config_js: DiaCore::mermaid_config_js(&selected_theme_id),
+        }
+    });
+
+    ThemeSetup {
+        themes,
+        selected_theme_id,
+        preview_theme,
+        startup_errors,
+    }
+}
+
+fn load_theme_catalog() -> Result<Vec<MermaidThemeInfo>, String> {
+    let catalog = DiaCore::mermaid_theme_catalog_json()
+        .map_err(|err| format!("failed to load shared theme catalog: {err}"))?;
+
+    let themes: Vec<MermaidThemeInfo> = serde_json::from_str(&catalog)
+        .map_err(|err| format!("failed to decode shared theme catalog: {err}"))?;
+
+    if themes.is_empty() {
+        return Err("shared theme catalog is empty".to_string());
+    }
+
+    Ok(themes)
+}
+
+fn load_theme_preference() -> Result<Option<String>, String> {
+    let path = preferences_path()?;
+    let data = match fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(format!("failed to read {}: {}", path.display(), source));
+        }
+    };
+
+    let preferences: AppPreferences = serde_json::from_str(&data)
+        .map_err(|err| format!("failed to parse {}: {}", path.display(), err))?;
+
+    if preferences.default_theme_id.trim().is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(preferences.default_theme_id))
+}
+
+fn save_theme_preference(theme_id: &str) -> Result<(), String> {
+    let path = preferences_path()?;
+    let Some(parent) = path.parent() else {
+        return Err(format!(
+            "failed to resolve parent directory for {}",
+            path.display()
+        ));
+    };
+
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create directory {}: {}", parent.display(), err))?;
+
+    let preferences = AppPreferences {
+        default_theme_id: theme_id.to_string(),
+    };
+    let mut encoded = serde_json::to_string_pretty(&preferences)
+        .map_err(|err| format!("failed to encode theme preferences: {err}"))?;
+    encoded.push('\n');
+
+    fs::write(&path, encoded).map_err(|err| format!("failed to write {}: {}", path.display(), err))
+}
+
+fn preview_theme_for_id(themes: &[MermaidThemeInfo], theme_id: &str) -> Option<PreviewTheme> {
+    let info = themes.iter().find(|theme| theme.id == theme_id)?.clone();
+    Some(PreviewTheme {
+        info,
+        mermaid_config_js: DiaCore::mermaid_config_js(theme_id),
+    })
+}
+
+fn fallback_theme_info(theme_id: &str) -> MermaidThemeInfo {
+    MermaidThemeInfo {
+        id: theme_id.to_string(),
         label: "Default".to_string(),
         preview_background: "#ffffff".to_string(),
         error_color: "#b91c1c".to_string(),
-    };
-
-    let catalog = match DiaCore::mermaid_theme_catalog_json() {
-        Ok(value) => value,
-        Err(_) => return fallback,
-    };
-
-    let themes: Vec<MermaidThemeInfo> = match serde_json::from_str(&catalog) {
-        Ok(value) => value,
-        Err(_) => return fallback,
-    };
-
-    themes
-        .into_iter()
-        .find(|theme| theme.id == DiaCore::default_theme_id())
-        .unwrap_or(fallback)
+    }
 }
 
 fn html_escape(value: &str) -> String {
@@ -882,16 +1077,8 @@ fn build_ui(app: &Application) {
 
 #[cfg(test)]
 mod tests {
-    use super::should_handle_auto_indent;
-    use dia_syntax::leading_indentation;
+    use super::{preview_theme_for_id, should_handle_auto_indent, MermaidThemeInfo};
     use gtk4 as gtk;
-
-    #[test]
-    fn keeps_space_and_tab_indentation() {
-        assert_eq!(leading_indentation("    line"), "    ");
-        assert_eq!(leading_indentation("\t\tline"), "\t\t");
-        assert_eq!(leading_indentation("  \t line"), "  \t ");
-    }
 
     #[test]
     fn handles_return_without_modifier() {
@@ -911,5 +1098,23 @@ mod tests {
             gtk::gdk::Key::KP_Enter,
             gtk::gdk::ModifierType::ALT_MASK
         ));
+    }
+
+    #[test]
+    fn builds_preview_theme_from_shared_theme_info() {
+        let themes = vec![MermaidThemeInfo {
+            id: "forest".to_string(),
+            label: "Forest".to_string(),
+            preview_background: "#ffffff".to_string(),
+            error_color: "#b91c1c".to_string(),
+        }];
+
+        let preview_theme = preview_theme_for_id(&themes, "forest")
+            .expect("preview theme should exist for catalog id");
+
+        assert_eq!(preview_theme.info.id, "forest");
+        assert!(preview_theme
+            .mermaid_config_js
+            .contains("theme: \"forest\""));
     }
 }
