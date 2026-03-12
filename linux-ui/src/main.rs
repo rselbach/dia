@@ -18,6 +18,9 @@ const TAG_MERMAID_KEYWORD: &str = "dia-mermaid-keyword";
 const TAG_MERMAID_OPERATOR: &str = "dia-mermaid-operator";
 const TAG_MERMAID_COMMENT: &str = "dia-mermaid-comment";
 const TAG_MERMAID_LABEL: &str = "dia-mermaid-label";
+const DEFAULT_EDITOR_FONT_SIZE: f64 = 14.0;
+const MIN_EDITOR_FONT_SIZE: f64 = 10.0;
+const MAX_EDITOR_FONT_SIZE: f64 = 24.0;
 
 #[derive(Clone, Deserialize)]
 struct MermaidThemeInfo {
@@ -35,15 +38,35 @@ struct PreviewTheme {
     mermaid_config_js: String,
 }
 
-#[derive(Deserialize, Serialize)]
-struct AppPreferences {
-    #[serde(rename = "defaultTheme")]
-    default_theme_id: String,
+#[derive(Clone)]
+struct EditorFontOption {
+    family: String,
+    label: String,
 }
 
-struct ThemeSetup {
+#[derive(Clone)]
+struct AppPreferences {
+    default_theme_id: String,
+    editor_font_name: String,
+    editor_font_size: f64,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct StoredAppPreferences {
+    #[serde(rename = "defaultTheme")]
+    #[serde(default)]
+    default_theme_id: String,
+    #[serde(rename = "editorFontName")]
+    #[serde(default)]
+    editor_font_name: String,
+    #[serde(rename = "editorFontSize")]
+    editor_font_size: Option<f64>,
+}
+
+struct AppSetup {
     themes: Vec<MermaidThemeInfo>,
-    selected_theme_id: String,
+    fonts: Vec<EditorFontOption>,
+    preferences: AppPreferences,
     preview_theme: PreviewTheme,
     startup_errors: Vec<String>,
 }
@@ -58,13 +81,16 @@ struct UiState {
     core: RefCell<DiaCore>,
     window: ApplicationWindow,
     buffer: gtk::TextBuffer,
+    editor: gtk::TextView,
+    editor_css_provider: gtk::CssProvider,
     preview: WebView,
     status: gtk::Label,
     preview_base_uri: String,
     available_themes: Vec<MermaidThemeInfo>,
-    selected_theme_id: RefCell<String>,
+    available_fonts: Vec<EditorFontOption>,
+    preferences: RefCell<AppPreferences>,
     preview_theme: RefCell<PreviewTheme>,
-    theme_startup_errors: Vec<String>,
+    startup_errors: Vec<String>,
     render_timer: RefCell<Option<gtk::glib::SourceId>>,
     highlight_timer: RefCell<Option<gtk::glib::SourceId>>,
     suppress_dirty_signal: Cell<bool>,
@@ -91,17 +117,14 @@ impl UiState {
         let export_png_button = gtk::Button::with_label("Export PNG");
         let save_button = gtk::Button::with_label("Save");
         let save_as_button = gtk::Button::with_label("Save As");
-        let theme_label = gtk::Label::new(Some("Theme"));
-        let theme_combo = gtk::ComboBoxText::new();
-        theme_combo.set_hexpand(false);
+        let preferences_button = gtk::Button::with_label("Preferences");
         toolbar.append(&new_button);
         toolbar.append(&open_button);
         toolbar.append(&open_recent_button);
         toolbar.append(&export_png_button);
         toolbar.append(&save_button);
         toolbar.append(&save_as_button);
-        toolbar.append(&theme_label);
-        toolbar.append(&theme_combo);
+        toolbar.append(&preferences_button);
 
         let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         paned.set_wide_handle(true);
@@ -112,6 +135,7 @@ impl UiState {
         text_buffer.set_text(DiaCore::default_document_content());
 
         let editor = gtk::TextView::with_buffer(&text_buffer);
+        editor.set_widget_name("diagram-editor");
         editor.set_monospace(true);
         editor.set_wrap_mode(gtk::WrapMode::None);
 
@@ -131,11 +155,15 @@ impl UiState {
         status.set_xalign(0.0);
         status.set_wrap(true);
 
-        let theme_setup = load_theme_setup();
-        for theme in &theme_setup.themes {
-            theme_combo.append(Some(&theme.id), &theme.label);
+        let app_setup = load_app_setup(&editor);
+        let editor_css_provider = gtk::CssProvider::new();
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &editor_css_provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
         }
-        theme_combo.set_active_id(Some(&theme_setup.selected_theme_id));
 
         root.append(&toolbar);
         root.append(&paned);
@@ -147,13 +175,16 @@ impl UiState {
             core: RefCell::new(DiaCore::new(10)),
             window,
             buffer: text_buffer,
+            editor: editor.clone(),
+            editor_css_provider,
             preview,
             status,
             preview_base_uri: mermaid_vendor_base_uri(),
-            available_themes: theme_setup.themes,
-            selected_theme_id: RefCell::new(theme_setup.selected_theme_id),
-            preview_theme: RefCell::new(theme_setup.preview_theme),
-            theme_startup_errors: theme_setup.startup_errors,
+            available_themes: app_setup.themes,
+            available_fonts: app_setup.fonts,
+            preferences: RefCell::new(app_setup.preferences),
+            preview_theme: RefCell::new(app_setup.preview_theme),
+            startup_errors: app_setup.startup_errors,
             render_timer: RefCell::new(None),
             highlight_timer: RefCell::new(None),
             suppress_dirty_signal: Cell::new(false),
@@ -261,14 +292,12 @@ impl UiState {
 
         {
             let ui = state.clone();
-            theme_combo.connect_changed(move |combo| {
-                let Some(theme_id) = combo.active_id() else {
-                    return;
-                };
-
-                ui.handle_theme_changed(theme_id.as_str());
+            preferences_button.connect_clicked(move |_| {
+                ui.handle_preferences();
             });
         }
+
+        state.apply_editor_preferences();
 
         state
     }
@@ -284,7 +313,7 @@ impl UiState {
             startup_errors.push(format!("failed to load recent files: {err}"));
         }
 
-        startup_errors.extend(self.theme_startup_errors.iter().cloned());
+        startup_errors.extend(self.startup_errors.iter().cloned());
 
         if startup_errors.is_empty() {
             self.clear_status();
@@ -613,29 +642,136 @@ impl UiState {
         true
     }
 
-    fn handle_theme_changed(&self, theme_id: &str) {
-        let normalized_theme_id = DiaCore::normalize_theme_id(theme_id).to_string();
-        if *self.selected_theme_id.borrow() == normalized_theme_id {
-            return;
+    fn handle_preferences(&self) {
+        let current = self.preferences.borrow().clone();
+
+        let dialog = gtk::Dialog::builder()
+            .title("Preferences")
+            .transient_for(&self.window)
+            .modal(true)
+            .build();
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Save", gtk::ResponseType::Accept);
+        dialog.set_default_response(gtk::ResponseType::Accept);
+
+        let content = dialog.content_area();
+        let grid = gtk::Grid::builder()
+            .column_spacing(12)
+            .row_spacing(12)
+            .margin_top(16)
+            .margin_bottom(16)
+            .margin_start(16)
+            .margin_end(16)
+            .build();
+
+        let font_label = gtk::Label::new(Some("Editor Font"));
+        font_label.set_xalign(0.0);
+        let font_combo = gtk::ComboBoxText::new();
+        font_combo.set_hexpand(true);
+        for option in &self.available_fonts {
+            font_combo.append(Some(&option.family), &option.label);
+        }
+        font_combo.set_active_id(Some(&current.editor_font_name));
+
+        let size_label = gtk::Label::new(Some("Font Size"));
+        size_label.set_xalign(0.0);
+        let size_adjustment = gtk::Adjustment::new(
+            current.editor_font_size,
+            MIN_EDITOR_FONT_SIZE,
+            MAX_EDITOR_FONT_SIZE,
+            1.0,
+            2.0,
+            0.0,
+        );
+        let size_spin = gtk::SpinButton::new(Some(&size_adjustment), 1.0, 0);
+        size_spin.set_hexpand(true);
+
+        let theme_label = gtk::Label::new(Some("Default Theme"));
+        theme_label.set_xalign(0.0);
+        let theme_combo = gtk::ComboBoxText::new();
+        theme_combo.set_hexpand(true);
+        for theme in &self.available_themes {
+            theme_combo.append(Some(&theme.id), &theme.label);
+        }
+        theme_combo.set_active_id(Some(&current.default_theme_id));
+
+        grid.attach(&font_label, 0, 0, 1, 1);
+        grid.attach(&font_combo, 1, 0, 1, 1);
+        grid.attach(&size_label, 0, 1, 1, 1);
+        grid.attach(&size_spin, 1, 1, 1, 1);
+        grid.attach(&theme_label, 0, 2, 1, 1);
+        grid.attach(&theme_combo, 1, 2, 1, 1);
+        content.append(&grid);
+
+        let response = gtk::glib::MainContext::default().block_on(dialog.run_future());
+        if response == gtk::ResponseType::Accept {
+            let next = AppPreferences {
+                default_theme_id: theme_combo
+                    .active_id()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| current.default_theme_id.clone()),
+                editor_font_name: font_combo
+                    .active_id()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| current.editor_font_name.clone()),
+                editor_font_size: size_spin.value(),
+            };
+            self.apply_preferences(next);
         }
 
-        let Some(preview_theme) =
-            preview_theme_for_id(&self.available_themes, &normalized_theme_id)
-        else {
-            self.set_error(format!(
-                "theme '{}' is unavailable in the shared catalog",
-                normalized_theme_id
-            ));
-            return;
+        dialog.close();
+    }
+
+    fn apply_preferences(&self, next: AppPreferences) {
+        let normalized_theme_id = DiaCore::normalize_theme_id(&next.default_theme_id).to_string();
+        let resolved_font_name =
+            resolve_editor_font_name(&self.available_fonts, &next.editor_font_name);
+        let resolved_font_size = clamp_editor_font_size(next.editor_font_size);
+
+        let current = self.preferences.borrow().clone();
+        let theme_changed = current.default_theme_id != normalized_theme_id;
+
+        if theme_changed {
+            let Some(preview_theme) =
+                preview_theme_for_id(&self.available_themes, &normalized_theme_id)
+            else {
+                self.set_error(format!(
+                    "theme '{}' is unavailable in the shared catalog",
+                    normalized_theme_id
+                ));
+                return;
+            };
+            self.preview_theme.replace(preview_theme);
+        }
+
+        let resolved = AppPreferences {
+            default_theme_id: normalized_theme_id,
+            editor_font_name: resolved_font_name,
+            editor_font_size: resolved_font_size,
         };
 
-        self.selected_theme_id.replace(normalized_theme_id.clone());
-        self.preview_theme.replace(preview_theme);
-        self.schedule_render();
+        self.preferences.replace(resolved.clone());
+        self.apply_editor_preferences();
 
-        if let Err(err) = save_theme_preference(&normalized_theme_id) {
-            self.set_error(format!("failed to save theme preference: {err}"));
+        if theme_changed {
+            self.schedule_render();
         }
+
+        if let Err(err) = save_preferences(&resolved) {
+            self.set_error(format!("failed to save preferences: {err}"));
+            return;
+        }
+
+        self.clear_status();
+    }
+
+    fn apply_editor_preferences(&self) {
+        let preferences = self.preferences.borrow();
+        self.editor_css_provider.load_from_data(&build_editor_css(
+            &preferences.editor_font_name,
+            preferences.editor_font_size,
+        ));
+        self.editor.queue_draw();
     }
 
     fn schedule_render(&self) {
@@ -709,6 +845,85 @@ fn recent_files_path() -> Result<PathBuf, String> {
 fn preferences_path() -> Result<PathBuf, String> {
     let config_root = config_root()?;
     Ok(config_root.join("dia").join("preferences.json"))
+}
+
+fn clamp_editor_font_size(size: f64) -> f64 {
+    size.clamp(MIN_EDITOR_FONT_SIZE, MAX_EDITOR_FONT_SIZE)
+}
+
+fn resolve_editor_font_name(options: &[EditorFontOption], font_name: &str) -> String {
+    let trimmed = font_name.trim();
+    if let Some(option) = options
+        .iter()
+        .find(|option| option.family.eq_ignore_ascii_case(trimmed))
+    {
+        return option.family.clone();
+    }
+
+    default_editor_font_name(options)
+}
+
+fn default_editor_font_name(options: &[EditorFontOption]) -> String {
+    options
+        .first()
+        .map(|option| option.family.clone())
+        .unwrap_or_else(|| "Monospace".to_string())
+}
+
+fn load_editor_font_options(editor: &gtk::TextView) -> Vec<EditorFontOption> {
+    let mut families = editor
+        .pango_context()
+        .list_families()
+        .into_iter()
+        .filter(|family| family.is_monospace())
+        .map(|family| family.name().to_string())
+        .collect::<Vec<_>>();
+    families.sort();
+    families.dedup();
+
+    let mut options = vec![EditorFontOption {
+        family: "monospace".to_string(),
+        label: "System Monospace".to_string(),
+    }];
+    for family in families {
+        if family.eq_ignore_ascii_case("monospace") {
+            continue;
+        }
+
+        options.push(EditorFontOption {
+            family: family.clone(),
+            label: family,
+        });
+    }
+
+    options
+}
+
+fn build_editor_css(font_name: &str, font_size: f64) -> String {
+    let font_family = css_font_family_value(font_name);
+    let clamped_font_size = clamp_editor_font_size(font_size);
+    format!(
+        r#"
+textview#diagram-editor,
+textview#diagram-editor text {{
+  font-family: {};
+  font-size: {}pt;
+}}
+"#,
+        font_family, clamped_font_size
+    )
+}
+
+fn escape_css_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn css_font_family_value(value: &str) -> String {
+    if value.eq_ignore_ascii_case("monospace") {
+        return "monospace".to_string();
+    }
+
+    format!("\"{}\"", escape_css_string(value))
 }
 
 fn config_root() -> Result<PathBuf, String> {
@@ -886,10 +1101,44 @@ fn diagram_html(source: &str, preview_theme: &PreviewTheme) -> String {
         padding: 16px;
         box-sizing: border-box;
       }}
-      #diagram svg {{
+      #diagram {{
         width: 100%;
-        height: auto;
-        max-height: calc(100vh - 40px);
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        touch-action: none;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+      }}
+      #diagram.is-panning {{
+        cursor: grabbing;
+      }}
+      #diagram .pan-inner {{
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }}
+      #diagram .zoom-inner {{
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }}
+      #diagram .zoom-inner svg {{
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        user-select: none;
+        -webkit-user-select: none;
       }}
       #error {{
         color: {};
@@ -908,18 +1157,178 @@ fn diagram_html(source: &str, preview_theme: &PreviewTheme) -> String {
       const source = {source_json};
       const diagramEl = document.getElementById("diagram");
       const errorEl = document.getElementById("error");
+      const zoomInnerClass = "zoom-inner";
+      const panInnerClass = "pan-inner";
+      const zoomMin = 0.25;
+      const zoomMax = 4;
+      let zoomLevel = 1;
+      let panX = 0;
+      let panY = 0;
+
+      function hasRenderedSVG() {{
+        return diagramEl.querySelector("svg") !== null;
+      }}
+
+      function applyPan() {{
+        const panInner = diagramEl.querySelector(`.${{panInnerClass}}`);
+        if (!panInner) return;
+        panInner.style.transform = `translate(${{panX}}px, ${{panY}}px)`;
+      }}
+
+      function panBounds(level) {{
+        const zoom = Number.isFinite(level) ? level : zoomLevel;
+        const width = diagramEl ? diagramEl.clientWidth : 0;
+        const height = diagramEl ? diagramEl.clientHeight : 0;
+        const maxX = Math.max(0, ((width * zoom) - width) / 2);
+        const maxY = Math.max(0, ((height * zoom) - height) / 2);
+        return {{ maxX, maxY }};
+      }}
+
+      function clampPan(x, y, level) {{
+        const bounds = panBounds(level);
+        return {{
+          x: Math.max(-bounds.maxX, Math.min(bounds.maxX, x)),
+          y: Math.max(-bounds.maxY, Math.min(bounds.maxY, y)),
+        }};
+      }}
+
+      window.setPan = function(x, y) {{
+        const clamped = clampPan(x, y, zoomLevel);
+        panX = clamped.x;
+        panY = clamped.y;
+        applyPan();
+        return {{ x: panX, y: panY }};
+      }};
+
+      function applyZoom() {{
+        const zoomInner = diagramEl.querySelector(`.${{zoomInnerClass}}`);
+        if (!zoomInner) return;
+        zoomInner.style.transform = `scale(${{zoomLevel}})`;
+        zoomInner.style.transformOrigin = "center center";
+      }}
+
+      window.setZoom = function(level) {{
+        const newZoom = Math.min(zoomMax, Math.max(zoomMin, level));
+        const clamped = clampPan(panX, panY, newZoom);
+        panX = clamped.x;
+        panY = clamped.y;
+        zoomLevel = newZoom;
+        applyPan();
+        applyZoom();
+        return zoomLevel;
+      }};
+
+      window.zoomIn = function() {{
+        return window.setZoom(Math.round((zoomLevel + 0.1) * 100) / 100);
+      }};
+
+      window.zoomOut = function() {{
+        return window.setZoom(Math.round((zoomLevel - 0.1) * 100) / 100);
+      }};
+
+      window.resetZoom = function() {{
+        return window.setZoom(1);
+      }};
+
+      function bindInteractions() {{
+        if (diagramEl.dataset.interactionsBound === "1") return;
+        diagramEl.dataset.interactionsBound = "1";
+
+        let isPanning = false;
+        let activePointerId = null;
+        let lastX = 0;
+        let lastY = 0;
+        let gestureStartZoom = 1;
+
+        diagramEl.addEventListener("pointerdown", (event) => {{
+          if (event.button !== 0 || !hasRenderedSVG() || zoomLevel <= 1) return;
+          isPanning = true;
+          activePointerId = event.pointerId;
+          lastX = event.clientX;
+          lastY = event.clientY;
+          diagramEl.classList.add("is-panning");
+          diagramEl.setPointerCapture(event.pointerId);
+          event.preventDefault();
+        }});
+
+        diagramEl.addEventListener("pointermove", (event) => {{
+          if (!isPanning || event.pointerId !== activePointerId) return;
+          const dx = event.clientX - lastX;
+          const dy = event.clientY - lastY;
+          lastX = event.clientX;
+          lastY = event.clientY;
+          window.setPan(panX + dx, panY + dy);
+          event.preventDefault();
+        }});
+
+        function stopPanning(event) {{
+          if (!isPanning) return;
+          if (activePointerId !== null && event.pointerId !== activePointerId) return;
+          isPanning = false;
+          activePointerId = null;
+          diagramEl.classList.remove("is-panning");
+        }}
+
+        diagramEl.addEventListener("pointerup", stopPanning);
+        diagramEl.addEventListener("pointercancel", stopPanning);
+        diagramEl.addEventListener("lostpointercapture", stopPanning);
+
+        diagramEl.addEventListener("wheel", (event) => {{
+          if (!hasRenderedSVG()) return;
+          event.preventDefault();
+          const delta = event.deltaY === 0 ? event.deltaX : event.deltaY;
+          if (delta === 0) return;
+          const scaleFactor = Math.exp(-delta * 0.002);
+          window.setZoom(zoomLevel * scaleFactor);
+        }}, {{ passive: false }});
+
+        document.addEventListener("gesturestart", (event) => {{
+          gestureStartZoom = zoomLevel;
+          event.preventDefault();
+        }}, {{ passive: false }});
+
+        document.addEventListener("gesturechange", (event) => {{
+          event.preventDefault();
+          window.setZoom(gestureStartZoom * event.scale);
+        }}, {{ passive: false }});
+      }}
+
       if (typeof mermaid === "undefined") {{
         errorEl.textContent = "failed to load local Mermaid bundle";
       }} else {{
       mermaid.initialize({});
+      bindInteractions();
 
       if (!source.trim()) {{
-        diagramEl.textContent = "";
+        diagramEl.innerHTML = "";
+        panX = 0;
+        panY = 0;
         errorEl.textContent = "";
       }} else {{
         mermaid.render("dia-preview", source)
           .then((result) => {{
-            diagramEl.innerHTML = result.svg;
+            diagramEl.innerHTML = `<div class="${{panInnerClass}}"><div class="${{zoomInnerClass}}">${{result.svg}}</div></div>`;
+            const svg = diagramEl.querySelector(`.${{zoomInnerClass}} svg`);
+            if (svg) {{
+              const padding = 16;
+              const bbox = svg.getBBox();
+              if (bbox.width > 0 && bbox.height > 0) {{
+                const minX = bbox.x - padding;
+                const minY = bbox.y - padding;
+                const width = bbox.width + (padding * 2);
+                const height = bbox.height + (padding * 2);
+                svg.setAttribute("viewBox", `${{minX}} ${{minY}} ${{width}} ${{height}}`);
+              }}
+
+              svg.setAttribute("width", "100%");
+              svg.setAttribute("height", "100%");
+              svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+              svg.style.display = "block";
+              svg.style.maxWidth = "100%";
+              svg.style.maxHeight = "100%";
+            }}
+            window.setPan(panX, panY);
+            applyZoom();
             errorEl.textContent = "";
           }})
           .catch((err) => {{
@@ -938,9 +1347,11 @@ fn diagram_html(source: &str, preview_theme: &PreviewTheme) -> String {
     )
 }
 
-fn load_theme_setup() -> ThemeSetup {
+fn load_app_setup(editor: &gtk::TextView) -> AppSetup {
     let theme_id = DiaCore::normalize_theme_id(DiaCore::default_theme_id()).to_string();
     let mut startup_errors = Vec::new();
+    let fonts = load_editor_font_options(editor);
+    let fallback_font_name = default_editor_font_name(&fonts);
 
     let themes = match load_theme_catalog() {
         Ok(value) => value,
@@ -950,17 +1361,21 @@ fn load_theme_setup() -> ThemeSetup {
         }
     };
 
-    let saved_theme_id = match load_theme_preference() {
-        Ok(value) => value,
+    let stored_preferences = match load_stored_preferences() {
+        Ok(value) => value.unwrap_or_default(),
         Err(err) => {
             startup_errors.push(err);
-            None
+            StoredAppPreferences::default()
         }
     };
 
-    let preferred_theme_id = saved_theme_id.unwrap_or_else(|| theme_id.clone());
+    let preferred_theme_id = if stored_preferences.default_theme_id.trim().is_empty() {
+        theme_id.clone()
+    } else {
+        stored_preferences.default_theme_id
+    };
     let normalized_theme_id = DiaCore::normalize_theme_id(&preferred_theme_id).to_string();
-    let selected_theme_id = if themes.iter().any(|theme| theme.id == normalized_theme_id) {
+    let default_theme_id = if themes.iter().any(|theme| theme.id == normalized_theme_id) {
         normalized_theme_id
     } else {
         startup_errors.push(format!(
@@ -970,20 +1385,52 @@ fn load_theme_setup() -> ThemeSetup {
         theme_id
     };
 
-    let preview_theme = preview_theme_for_id(&themes, &selected_theme_id).unwrap_or_else(|| {
+    let resolved_stored_font_name =
+        resolve_editor_font_name(&fonts, &stored_preferences.editor_font_name);
+    let editor_font_name = if stored_preferences.editor_font_name.trim().is_empty() {
+        fallback_font_name.clone()
+    } else if resolved_stored_font_name != fallback_font_name
+        || stored_preferences
+            .editor_font_name
+            .eq_ignore_ascii_case(&fallback_font_name)
+    {
+        resolved_stored_font_name
+    } else {
         startup_errors.push(format!(
-            "failed to build preview theme for '{}'",
-            selected_theme_id
+            "saved editor font '{}' is unavailable; using '{}'",
+            stored_preferences.editor_font_name, fallback_font_name
         ));
-        PreviewTheme {
-            info: fallback_theme_info(&selected_theme_id),
-            mermaid_config_js: DiaCore::mermaid_config_js(&selected_theme_id),
-        }
-    });
+        fallback_font_name.clone()
+    };
 
-    ThemeSetup {
+    let editor_font_size = clamp_editor_font_size(
+        stored_preferences
+            .editor_font_size
+            .unwrap_or(DEFAULT_EDITOR_FONT_SIZE),
+    );
+
+    let preferences = AppPreferences {
+        default_theme_id: default_theme_id.clone(),
+        editor_font_name,
+        editor_font_size,
+    };
+
+    let preview_theme = preview_theme_for_id(&themes, &preferences.default_theme_id)
+        .unwrap_or_else(|| {
+            startup_errors.push(format!(
+                "failed to build preview theme for '{}'",
+                preferences.default_theme_id
+            ));
+            PreviewTheme {
+                info: fallback_theme_info(&preferences.default_theme_id),
+                mermaid_config_js: DiaCore::mermaid_config_js(&preferences.default_theme_id),
+            }
+        });
+
+    AppSetup {
         themes,
-        selected_theme_id,
+        fonts,
+        preferences,
         preview_theme,
         startup_errors,
     }
@@ -1003,7 +1450,7 @@ fn load_theme_catalog() -> Result<Vec<MermaidThemeInfo>, String> {
     Ok(themes)
 }
 
-fn load_theme_preference() -> Result<Option<String>, String> {
+fn load_stored_preferences() -> Result<Option<StoredAppPreferences>, String> {
     let path = preferences_path()?;
     let data = match fs::read_to_string(&path) {
         Ok(value) => value,
@@ -1013,17 +1460,13 @@ fn load_theme_preference() -> Result<Option<String>, String> {
         }
     };
 
-    let preferences: AppPreferences = serde_json::from_str(&data)
+    let preferences: StoredAppPreferences = serde_json::from_str(&data)
         .map_err(|err| format!("failed to parse {}: {}", path.display(), err))?;
 
-    if preferences.default_theme_id.trim().is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(preferences.default_theme_id))
+    Ok(Some(preferences))
 }
 
-fn save_theme_preference(theme_id: &str) -> Result<(), String> {
+fn save_preferences(preferences: &AppPreferences) -> Result<(), String> {
     let path = preferences_path()?;
     let Some(parent) = path.parent() else {
         return Err(format!(
@@ -1035,11 +1478,13 @@ fn save_theme_preference(theme_id: &str) -> Result<(), String> {
     fs::create_dir_all(parent)
         .map_err(|err| format!("failed to create directory {}: {}", parent.display(), err))?;
 
-    let preferences = AppPreferences {
-        default_theme_id: theme_id.to_string(),
+    let stored_preferences = StoredAppPreferences {
+        default_theme_id: preferences.default_theme_id.clone(),
+        editor_font_name: preferences.editor_font_name.clone(),
+        editor_font_size: Some(clamp_editor_font_size(preferences.editor_font_size)),
     };
-    let mut encoded = serde_json::to_string_pretty(&preferences)
-        .map_err(|err| format!("failed to encode theme preferences: {err}"))?;
+    let mut encoded = serde_json::to_string_pretty(&stored_preferences)
+        .map_err(|err| format!("failed to encode preferences: {err}"))?;
     encoded.push('\n');
 
     fs::write(&path, encoded).map_err(|err| format!("failed to write {}: {}", path.display(), err))
@@ -1077,7 +1522,11 @@ fn build_ui(app: &Application) {
 
 #[cfg(test)]
 mod tests {
-    use super::{preview_theme_for_id, should_handle_auto_indent, MermaidThemeInfo};
+    use super::{
+        build_editor_css, diagram_html, preview_theme_for_id, should_handle_auto_indent,
+        MermaidThemeInfo, PreviewTheme,
+    };
+    use dia_core::DiaCore;
     use gtk4 as gtk;
 
     #[test]
@@ -1116,5 +1565,45 @@ mod tests {
         assert!(preview_theme
             .mermaid_config_js
             .contains("theme: \"forest\""));
+    }
+
+    #[test]
+    fn preview_html_sizes_svg_to_fill_preview_pane() {
+        let preview_theme = PreviewTheme {
+            info: MermaidThemeInfo {
+                id: "default".to_string(),
+                label: "Default".to_string(),
+                preview_background: "#ffffff".to_string(),
+                error_color: "#b91c1c".to_string(),
+            },
+            mermaid_config_js: DiaCore::mermaid_config_js("default"),
+        };
+
+        let html = diagram_html("flowchart TD\nA-->B\n", &preview_theme);
+
+        assert!(html.contains("#diagram {"));
+        assert!(html.contains("width: 100%;"));
+        assert!(html.contains("height: 100%;"));
+        assert!(html.contains("max-width: 100%;"));
+        assert!(html.contains("max-height: 100%;"));
+        assert!(html.contains("svg.setAttribute(\"width\", \"100%\")"));
+        assert!(html.contains("svg.setAttribute(\"height\", \"100%\")"));
+        assert!(html.contains("svg.setAttribute(\"preserveAspectRatio\", \"xMidYMid meet\")"));
+        assert!(html.contains("const zoomMin = 0.25;"));
+        assert!(html.contains("window.setZoom = function(level)"));
+        assert!(html.contains("window.setPan = function(x, y)"));
+        assert!(html.contains("diagramEl.addEventListener(\"wheel\""));
+        assert!(html.contains("diagramEl.addEventListener(\"pointerdown\""));
+        assert!(html.contains("zoomInnerClass"));
+        assert!(html.contains("panInnerClass"));
+    }
+
+    #[test]
+    fn editor_css_uses_selected_font_and_size() {
+        let css = build_editor_css("JetBrains Mono", 18.0);
+
+        assert!(css.contains("textview#diagram-editor"));
+        assert!(css.contains("font-family: \"JetBrains Mono\";"));
+        assert!(css.contains("font-size: 18pt;"));
     }
 }
