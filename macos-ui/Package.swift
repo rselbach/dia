@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "dia-macos-ui",
+    name: "Dia",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "dia-macos-ui", targets: ["DiaMac"])
+        .executable(name: "Dia", targets: ["DiaMac"])
     ],
     targets: [
         .target(

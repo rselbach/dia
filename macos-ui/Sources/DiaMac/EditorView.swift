@@ -66,6 +66,7 @@ private enum EditorTheme {
 
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
+    let font: NSFont
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -90,6 +91,7 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.installBoundsObserver()
 
         updateTextView(textView, with: text)
+        updateFont(for: textView)
         synchronizeLayout(for: textView, in: scrollView)
         logEditorState(textView, context: "makeNSView")
         return containerView
@@ -105,6 +107,8 @@ struct CodeEditorView: NSViewRepresentable {
             textView.selectedRanges = selectedRanges
             context.coordinator.isUpdatingFromSwiftUI = false
         }
+
+        updateFont(for: textView)
 
         synchronizeLayout(for: textView, in: nsView.scrollView)
         nsView.needsLayout = true
@@ -166,7 +170,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isRichText = false
         textView.importsGraphics = false
         textView.usesFindPanel = true
-        textView.font = MermaidHighlighter.font
+        textView.font = font
         textView.drawsBackground = true
         textView.backgroundColor = EditorTheme.background
         textView.textColor = EditorTheme.text
@@ -180,7 +184,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
-        textView.typingAttributes = MermaidHighlighter.baseAttributes
+        textView.typingAttributes = MermaidHighlighter.baseAttributes(font: font)
 
         let seededSize = NSSize(
             width: max(contentSize.width, 1),
@@ -193,8 +197,18 @@ struct CodeEditorView: NSViewRepresentable {
 
     private func updateTextView(_ textView: NSTextView, with text: String) {
         textView.string = text
-        MermaidHighlighter.apply(to: textView)
-        textView.typingAttributes = MermaidHighlighter.baseAttributes
+        MermaidHighlighter.apply(to: textView, font: font)
+        textView.typingAttributes = MermaidHighlighter.baseAttributes(font: font)
+    }
+
+    private func updateFont(for textView: NSTextView) {
+        guard textView.font?.fontName != font.fontName || textView.font?.pointSize != font.pointSize else {
+            return
+        }
+
+        textView.font = font
+        MermaidHighlighter.apply(to: textView, font: font)
+        textView.typingAttributes = MermaidHighlighter.baseAttributes(font: font)
     }
 
     private func synchronizeLayout(for textView: NSTextView, in scrollView: NSScrollView) {
@@ -305,8 +319,8 @@ struct CodeEditorView: NSViewRepresentable {
             else { return }
 
             parent.text = textView.string
-            MermaidHighlighter.apply(to: textView)
-            textView.typingAttributes = MermaidHighlighter.baseAttributes
+            MermaidHighlighter.apply(to: textView, font: parent.font)
+            textView.typingAttributes = MermaidHighlighter.baseAttributes(font: parent.font)
             if let scrollView = self.scrollView {
                 parent.synchronizeLayout(for: textView, in: scrollView)
             }
@@ -485,11 +499,12 @@ final class LineNumberGutterView: NSView {
 }
 
 private enum MermaidHighlighter {
-    static let font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    static let baseAttributes: [NSAttributedString.Key: Any] = [
-        .font: font,
-        .foregroundColor: EditorTheme.text,
-    ]
+    static func baseAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
+        [
+            .font: font,
+            .foregroundColor: EditorTheme.text,
+        ]
+    }
 
     private static let keywords: Set<String> = [
         "flowchart", "graph", "sequencediagram", "classdiagram", "statediagram",
@@ -506,7 +521,7 @@ private enum MermaidHighlighter {
     private static let quotedPattern = try! NSRegularExpression(pattern: "\"[^\"]*\"")
     private static let pipePattern = try! NSRegularExpression(pattern: "\\|[^|]+\\|")
 
-    static func apply(to textView: NSTextView) {
+    static func apply(to textView: NSTextView, font: NSFont) {
         guard let textStorage = textView.textStorage else { return }
 
         let string = textStorage.string
@@ -514,7 +529,7 @@ private enum MermaidHighlighter {
         let fullRange = NSRange(location: 0, length: nsString.length)
 
         textStorage.beginEditing()
-        textStorage.setAttributes(baseAttributes, range: fullRange)
+        textStorage.setAttributes(baseAttributes(font: font), range: fullRange)
 
         var lineStart = 0
         while lineStart < nsString.length {

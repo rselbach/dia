@@ -2,19 +2,69 @@ import AppKit
 import SwiftUI
 import WebKit
 
+private enum AppMetadata {
+    static let displayName = "Dia"
+    static let fallbackVersion = "0.1.0"
+
+    static var versionString: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (shortVersion, buildVersion) {
+        case let (short?, build?) where !short.isEmpty && !build.isEmpty && short != build:
+            return "\(short) (\(build))"
+        case let (short?, _) where !short.isEmpty:
+            return short
+        case let (_, build?) where !build.isEmpty:
+            return build
+        default:
+            return fallbackVersion
+        }
+    }
+
+    static var aboutCredits: NSAttributedString {
+        NSAttributedString(
+            string: "Native macOS Mermaid editor and preview.",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+    static func configureApplicationIdentity() {
+        ProcessInfo.processInfo.processName = displayName
+    }
+
+    static func showAboutPanel() {
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .applicationName: displayName,
+            .applicationVersion: versionString,
+            .credits: aboutCredits,
+        ])
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
 @main
 struct DiaMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var state = AppState()
+    @StateObject private var preferences = AppPreferences()
+    @StateObject private var state: AppState
 
     init() {
+        AppMetadata.configureApplicationIdentity()
         NSApplication.shared.setActivationPolicy(.regular)
+        let preferences = AppPreferences()
+        _preferences = StateObject(wrappedValue: preferences)
+        _state = StateObject(wrappedValue: AppState(preferences: preferences))
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(state)
+                .environmentObject(preferences)
                 .frame(minWidth: 960, minHeight: 620)
                 .onAppear {
                     appDelegate.state = state
@@ -24,6 +74,11 @@ struct DiaMacApp: App {
         .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
             DiaCommands(state: state)
+        }
+
+        Settings {
+            PreferencesView()
+                .environmentObject(preferences)
         }
     }
 }
@@ -48,14 +103,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct ContentView: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var preferences: AppPreferences
 
     var body: some View {
         VStack(spacing: 0) {
             HSplitView {
-                CodeEditorView(text: $state.source)
+                CodeEditorView(text: $state.source, font: preferences.editorFont)
                     .frame(minWidth: 300)
 
-                MermaidPreview(html: state.previewHTML, onCreated: state.attachPreview)
+                MermaidPreview(
+                    html: state.previewHTML,
+                    zoomScale: state.previewZoomScale,
+                    onCreated: state.attachPreview,
+                    onZoomChanged: state.updatePreviewZoomScaleFromGesture,
+                    onCopyPNG: state.copyPreviewAsPNG,
+                    onCopySVG: state.copyPreviewAsSVG
+                )
                     .frame(minWidth: 300)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,6 +166,25 @@ private struct ContentView: View {
             }
             .help("Export as PNG")
         }
+
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Button("Zoom In", action: state.zoomInPreview)
+                Button("Zoom Out", action: state.zoomOutPreview)
+                Divider()
+                Button("Actual Size", action: state.resetPreviewZoom)
+            } label: {
+                Label("Zoom", systemImage: "plus.magnifyingglass")
+            }
+            .help("Preview Zoom")
+        }
+
+        ToolbarItem(placement: .automatic) {
+            Text("\(Int((state.previewZoomScale * 100).rounded()))%")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 48, alignment: .trailing)
+        }
     }
 
     // MARK: Status Bar
@@ -142,12 +224,29 @@ private struct DiaCommands: Commands {
     @ObservedObject var state: AppState
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About \(AppMetadata.displayName)", action: AppMetadata.showAboutPanel)
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New", action: state.newDocument)
                 .keyboardShortcut("n", modifiers: .command)
 
             Button("Open...", action: state.openDocument)
                 .keyboardShortcut("o", modifiers: .command)
+
+            Menu("Open Recent") {
+                if state.recentFiles.isEmpty {
+                    Button("No Recent Files") {}
+                        .disabled(true)
+                } else {
+                    ForEach(state.recentFiles, id: \.self) { path in
+                        Button(path) {
+                            state.openRecent(path: path)
+                        }
+                    }
+                }
+            }
         }
 
         CommandGroup(replacing: .saveItem) {
@@ -163,25 +262,25 @@ private struct DiaCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
         }
 
-        CommandMenu("Open Recent") {
-            if state.recentFiles.isEmpty {
-                Button("No Recent Files") {}
-                    .disabled(true)
-            } else {
-                ForEach(state.recentFiles, id: \.self) { path in
-                    Button(path) {
-                        state.openRecent(path: path)
+        CommandGroup(after: .toolbar) {
+            Menu("Theme") {
+                Picker("Theme", selection: $state.selectedTheme) {
+                    ForEach(MermaidTheme.allCases) { theme in
+                        Text(theme.label).tag(theme)
                     }
                 }
             }
         }
 
-        CommandMenu("Theme") {
-            ForEach(MermaidTheme.allCases) { theme in
-                Button(theme.label) {
-                    state.selectedTheme = theme
-                }
-            }
+        CommandGroup(after: .sidebar) {
+            Button("Zoom In", action: state.zoomInPreview)
+                .keyboardShortcut("+", modifiers: .command)
+
+            Button("Zoom Out", action: state.zoomOutPreview)
+                .keyboardShortcut("-", modifiers: .command)
+
+            Button("Actual Size", action: state.resetPreviewZoom)
+                .keyboardShortcut("0", modifiers: .command)
         }
     }
 }
@@ -190,25 +289,96 @@ private struct DiaCommands: Commands {
 
 private struct MermaidPreview: NSViewRepresentable {
     let html: String
-    let onCreated: (WKWebView) -> Void
+    let zoomScale: CGFloat
+    let onCreated: (PreviewWebView) -> Void
+    let onZoomChanged: (CGFloat) -> Void
+    let onCopyPNG: () -> Void
+    let onCopySVG: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onZoomChanged: onZoomChanged)
+    }
 
-    func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView(frame: .zero)
+    func makeNSView(context: Context) -> PreviewWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.add(context.coordinator, name: "zoomChanged")
+
+        let webView = PreviewWebView(frame: .zero, configuration: configuration)
+        webView.copyPNGHandler = onCopyPNG
+        webView.copySVGHandler = onCopySVG
         context.coordinator.lastHTML = html
+        context.coordinator.lastZoomScale = zoomScale
         webView.loadHTMLString(html, baseURL: nil)
         onCreated(webView)
         return webView
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        guard html != context.coordinator.lastHTML else { return }
-        context.coordinator.lastHTML = html
-        nsView.loadHTMLString(html, baseURL: nil)
+    func updateNSView(_ nsView: PreviewWebView, context: Context) {
+        if html != context.coordinator.lastHTML {
+            context.coordinator.lastHTML = html
+            nsView.loadHTMLString(html, baseURL: nil)
+        }
+
+        context.coordinator.lastZoomScale = zoomScale
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKScriptMessageHandler {
+        let onZoomChanged: (CGFloat) -> Void
         var lastHTML = ""
+        var lastZoomScale: CGFloat = 1
+
+        init(onZoomChanged: @escaping (CGFloat) -> Void) {
+            self.onZoomChanged = onZoomChanged
+        }
+
+        func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "zoomChanged" else { return }
+
+            let nextScale: CGFloat?
+            if let number = message.body as? NSNumber {
+                nextScale = CGFloat(truncating: number)
+            } else if let value = message.body as? Double {
+                nextScale = CGFloat(value)
+            } else if let value = message.body as? CGFloat {
+                nextScale = value
+            } else {
+                nextScale = nil
+            }
+
+            guard let nextScale else { return }
+            lastZoomScale = nextScale
+            onZoomChanged(nextScale)
+        }
+    }
+}
+
+@MainActor
+private final class PreviewWebView: WKWebView {
+    var copyPNGHandler: (() -> Void)?
+    var copySVGHandler: (() -> Void)?
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        menu.removeAllItems()
+
+        let copyPNGItem = NSMenuItem(title: "Copy as PNG", action: #selector(handleCopyPNG), keyEquivalent: "")
+        copyPNGItem.target = self
+        menu.addItem(copyPNGItem)
+
+        let copySVGItem = NSMenuItem(title: "Copy as SVG", action: #selector(handleCopySVG), keyEquivalent: "")
+        copySVGItem.target = self
+        menu.addItem(copySVGItem)
+
+        super.willOpenMenu(menu, with: event)
+    }
+
+    @objc private func handleCopyPNG() {
+        copyPNGHandler?()
+    }
+
+    @objc private func handleCopySVG() {
+        copySVGHandler?()
     }
 }
