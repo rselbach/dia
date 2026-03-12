@@ -84,6 +84,16 @@ pub fn highlight_spans(source: &str) -> Vec<HighlightSpan> {
     spans
 }
 
+pub fn leading_indentation(line: &str) -> String {
+    line.chars()
+        .take_while(|value| matches!(value, ' ' | '\t'))
+        .collect()
+}
+
+pub fn auto_indent_insertion(prefix: &str) -> String {
+    format!("\n{}", leading_indentation(prefix))
+}
+
 fn highlight_line(line: &str, line_offset: usize, spans: &mut Vec<HighlightSpan>) {
     if line.is_empty() {
         return;
@@ -226,7 +236,7 @@ fn span_kind_rank(kind: HighlightKind) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{highlight_spans, HighlightKind};
+    use super::{auto_indent_insertion, highlight_spans, leading_indentation, HighlightKind};
 
     #[test]
     fn highlights_mermaid_tokens() {
@@ -286,6 +296,20 @@ mod tests {
             .expect("flowchart keyword span must exist");
 
         assert_eq!(flowchart_span.start, 2);
+    }
+
+    #[test]
+    fn preserves_space_and_tab_indentation() {
+        assert_eq!(leading_indentation("    line"), "    ");
+        assert_eq!(leading_indentation("\t\tline"), "\t\t");
+        assert_eq!(leading_indentation("  \t line"), "  \t ");
+    }
+
+    #[test]
+    fn auto_indent_inserts_newline_plus_leading_whitespace() {
+        assert_eq!(auto_indent_insertion("    abc"), "\n    ");
+        assert_eq!(auto_indent_insertion("\t\tabc"), "\n\t\t");
+        assert_eq!(auto_indent_insertion("abc"), "\n");
     }
 
     fn contains_span_text(

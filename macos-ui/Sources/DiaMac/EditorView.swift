@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+private let syntaxCore = DiaCoreBridge()
+
 private enum EditorTheme {
     private struct Palette {
         let background: NSColor
@@ -337,9 +339,8 @@ struct CodeEditorView: NSViewRepresentable {
             let location = min(selectedRange.location, content.length)
             let lineRange = content.lineRange(for: NSRange(location: location, length: 0))
             let line = content.substring(with: lineRange)
-            let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
-
-            textView.insertText("\n\(indentation)", replacementRange: selectedRange)
+            let insertion = (try? syntaxCore.autoIndentInsertion(prefix: line)) ?? "\n"
+            textView.insertText(insertion, replacementRange: selectedRange)
             return true
         }
     }
@@ -506,62 +507,45 @@ private enum MermaidHighlighter {
         ]
     }
 
-    private static let keywords: Set<String> = [
-        "flowchart", "graph", "sequencediagram", "classdiagram", "statediagram",
-        "statediagram-v2", "erdiagram", "journey", "gantt", "pie", "mindmap",
-        "timeline", "quadrantchart", "gitgraph", "subgraph", "end", "direction",
-        "classdef", "class", "click", "linkstyle", "style", "section", "title",
-        "participant", "actor", "loop", "alt", "else", "opt", "par", "and",
-        "critical", "break", "rect", "note", "activate", "deactivate",
-        "tb", "bt", "lr", "rl", "td", "dt",
-    ]
-
-    private static let wordPattern = try! NSRegularExpression(pattern: "[a-zA-Z_][a-zA-Z0-9_-]*")
-    private static let operatorPattern = try! NSRegularExpression(pattern: "-\\.->|==>|<--|-->|---|--x|--o|:::")
-    private static let quotedPattern = try! NSRegularExpression(pattern: "\"[^\"]*\"")
-    private static let pipePattern = try! NSRegularExpression(pattern: "\\|[^|]+\\|")
-
     static func apply(to textView: NSTextView, font: NSFont) {
         guard let textStorage = textView.textStorage else { return }
 
         let string = textStorage.string
-        let nsString = string as NSString
-        let fullRange = NSRange(location: 0, length: nsString.length)
+        let utf16Count = string.utf16.count
+        let fullRange = NSRange(location: 0, length: utf16Count)
 
         textStorage.beginEditing()
         textStorage.setAttributes(baseAttributes(font: font), range: fullRange)
 
-        var lineStart = 0
-        while lineStart < nsString.length {
-            let lineRange = nsString.lineRange(for: NSRange(location: lineStart, length: 0))
-            let line = nsString.substring(with: lineRange)
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmedLine.hasPrefix("%%") {
-                textStorage.addAttribute(.foregroundColor, value: EditorTheme.comment, range: lineRange)
-            } else {
-                for match in wordPattern.matches(in: string, range: lineRange) {
-                    let word = nsString.substring(with: match.range)
-                    guard keywords.contains(word.lowercased()) else { continue }
-                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.keyword, range: match.range)
-                }
-
-                for match in operatorPattern.matches(in: string, range: lineRange) {
-                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.arrow, range: match.range)
-                }
-
-                for match in quotedPattern.matches(in: string, range: lineRange) {
-                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.label, range: match.range)
-                }
-
-                for match in pipePattern.matches(in: string, range: lineRange) {
-                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.label, range: match.range)
-                }
+        let spans = (try? syntaxCore.mermaidHighlightSpans(source: string)) ?? []
+        for span in spans {
+            let range = NSRange(
+                location: utf16Offset(in: string, charIndex: span.start),
+                length: utf16Offset(in: string, charIndex: span.end) - utf16Offset(in: string, charIndex: span.start)
+            )
+            let color: NSColor
+            switch span.kind {
+            case "keyword":
+                color = EditorTheme.keyword
+            case "operator":
+                color = EditorTheme.arrow
+            case "comment":
+                color = EditorTheme.comment
+            case "label":
+                color = EditorTheme.label
+            default:
+                continue
             }
-
-            lineStart = NSMaxRange(lineRange)
+            textStorage.addAttribute(.foregroundColor, value: color, range: range)
         }
 
         textStorage.endEditing()
+    }
+
+    private static func utf16Offset(in string: String, charIndex: Int) -> Int {
+        guard charIndex > 0 else { return 0 }
+        let clampedIndex = min(charIndex, string.count)
+        let index = string.index(string.startIndex, offsetBy: clampedIndex)
+        return string.utf16.distance(from: string.utf16.startIndex, to: index.samePosition(in: string.utf16) ?? string.utf16.endIndex)
     }
 }

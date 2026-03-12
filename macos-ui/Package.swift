@@ -15,7 +15,9 @@ let package = Package(
         ),
         .executableTarget(
             name: "DiaMac",
-            dependencies: ["DiaCoreFFI"],
+            dependencies: [
+                "DiaCoreFFI",
+            ],
             path: "Sources/DiaMac",
             linkerSettings: [
                 .unsafeFlags(["-L", "../core/target/release"]),

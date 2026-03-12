@@ -4,157 +4,6 @@ import Foundation
 import UniformTypeIdentifiers
 import WebKit
 
-private let defaultSource = """
-flowchart TD
-    A[Start] --> B{Is it working?}
-    B -->|Yes| C[Great!]
-    B -->|No| D[Debug]
-    D --> B
-"""
-
-// MARK: - Mermaid Themes
-//
-//  All 11 themes from the Wails frontend, including 4 built-in Mermaid
-//  themes and 7 custom themes that use Mermaid's "base" theme engine
-//  with custom themeVariables.
-
-enum MermaidTheme: String, CaseIterable, Identifiable {
-    case defaultTheme = "default"
-    case dark
-    case forest
-    case neutral
-    case catppuccin
-    case dracula
-    case nord
-    case synthwave
-    case rose
-    case ocean
-    case solarized
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .defaultTheme: return "Default"
-        case .dark: return "Dark"
-        case .forest: return "Forest"
-        case .neutral: return "Neutral"
-        case .catppuccin: return "Catppuccin"
-        case .dracula: return "Dracula"
-        case .nord: return "Nord"
-        case .synthwave: return "Synthwave"
-        case .rose: return "Rose"
-        case .ocean: return "Ocean"
-        case .solarized: return "Solarized"
-        }
-    }
-
-    var previewBackground: String {
-        switch self {
-        case .defaultTheme: return "#ffffff"
-        case .dark: return "#333333"
-        case .forest: return "#ffffff"
-        case .neutral: return "#ffffff"
-        case .catppuccin: return "#1e1e2e"
-        case .dracula: return "#282a36"
-        case .nord: return "#eceff4"
-        case .synthwave: return "#1a1a2e"
-        case .rose: return "#fff1f2"
-        case .ocean: return "#eaf8ff"
-        case .solarized: return "#fdf6e3"
-        }
-    }
-
-    /// For custom themes, the error text needs to contrast with the
-    /// preview background. Dark backgrounds get a light red,
-    /// light backgrounds get a dark red.
-    var errorColor: String {
-        switch self {
-        case .dark, .catppuccin, .dracula, .synthwave:
-            return "#f38ba8"
-        default:
-            return "#b91c1c"
-        }
-    }
-
-    /// Custom themes use Mermaid's "base" theme with variable overrides.
-    /// Built-in themes return nil (they use the theme name directly).
-    var themeVariables: [String: String]? {
-        switch self {
-        case .defaultTheme, .dark, .forest, .neutral:
-            return nil
-        case .catppuccin:
-            return [
-                "primaryColor": "#89b4fa", "primaryBorderColor": "#74c7ec",
-                "secondaryColor": "#cba6f7", "secondaryBorderColor": "#b4befe",
-                "tertiaryColor": "#a6e3a1", "tertiaryBorderColor": "#94e2d5",
-                "lineColor": "#bac2de", "textColor": "#cdd6f4",
-            ]
-        case .dracula:
-            return [
-                "primaryColor": "#bd93f9", "primaryBorderColor": "#6272a4",
-                "secondaryColor": "#ff79c6", "secondaryBorderColor": "#ff79c6",
-                "tertiaryColor": "#50fa7b", "tertiaryBorderColor": "#50fa7b",
-                "lineColor": "#f8f8f2", "textColor": "#f8f8f2",
-            ]
-        case .nord:
-            return [
-                "primaryColor": "#5e81ac", "primaryBorderColor": "#4c566a",
-                "secondaryColor": "#a3be8c", "secondaryBorderColor": "#4c566a",
-                "tertiaryColor": "#d08770", "tertiaryBorderColor": "#4c566a",
-                "lineColor": "#4c566a", "textColor": "#2e3440",
-            ]
-        case .synthwave:
-            return [
-                "primaryColor": "#f72585", "primaryBorderColor": "#ff6ec7",
-                "secondaryColor": "#7209b7", "secondaryBorderColor": "#b5179e",
-                "tertiaryColor": "#4361ee", "tertiaryBorderColor": "#4cc9f0",
-                "lineColor": "#ff6ec7", "textColor": "#f0e6ff",
-            ]
-        case .rose:
-            return [
-                "primaryColor": "#e11d48", "primaryBorderColor": "#be123c",
-                "secondaryColor": "#fb7185", "secondaryBorderColor": "#f43f5e",
-                "tertiaryColor": "#fda4af", "tertiaryBorderColor": "#fb7185",
-                "lineColor": "#881337", "textColor": "#4c0519",
-            ]
-        case .ocean:
-            return [
-                "primaryColor": "#0077b6", "primaryBorderColor": "#023e8a",
-                "secondaryColor": "#00b4d8", "secondaryBorderColor": "#0096c7",
-                "tertiaryColor": "#48cae4", "tertiaryBorderColor": "#0096c7",
-                "lineColor": "#03045e", "textColor": "#03045e",
-            ]
-        case .solarized:
-            return [
-                "primaryColor": "#268bd2", "primaryBorderColor": "#2aa198",
-                "secondaryColor": "#859900", "secondaryBorderColor": "#859900",
-                "tertiaryColor": "#b58900", "tertiaryBorderColor": "#cb4b16",
-                "lineColor": "#586e75", "textColor": "#657b83",
-            ]
-        }
-    }
-
-    /// Generates the JavaScript object literal passed to mermaid.initialize().
-    var mermaidConfigJS: String {
-        var parts = [
-            "startOnLoad: false",
-            "securityLevel: \"strict\"",
-        ]
-
-        if let variables = themeVariables {
-            parts.append("theme: \"base\"")
-            let varParts = variables.sorted(by: { $0.key < $1.key })
-                .map { "\($0.key): \"\($0.value)\"" }
-            parts.append("themeVariables: { \(varParts.joined(separator: ", ")) }")
-        } else {
-            parts.append("theme: \"\(rawValue)\"")
-        }
-
-        return "{ \(parts.joined(separator: ", ")) }"
-    }
-}
-
 // MARK: - Application State
 
 @MainActor
@@ -178,16 +27,23 @@ final class AppState: ObservableObject {
     @Published private(set) var statusMessage: String = ""
     @Published private(set) var recentFiles: [String] = []
     @Published private(set) var previewZoomScale: CGFloat = 1
-    @Published var selectedTheme: MermaidTheme = .defaultTheme {
+    @Published var selectedThemeID: String = "default" {
         didSet {
-            if preferences.defaultTheme != selectedTheme {
-                preferences.defaultTheme = selectedTheme
+            let normalizedID = normalizedThemeID(selectedThemeID)
+            if normalizedID != selectedThemeID {
+                selectedThemeID = normalizedID
+                return
+            }
+
+            if preferences.defaultThemeID != selectedThemeID {
+                preferences.defaultThemeID = selectedThemeID
             }
             schedulePreviewRender()
         }
     }
 
     let preferences: AppPreferences
+    let themes: [MermaidThemeInfo]
 
     private let core: DiaCoreBridge
     private let recentFilesPath: String
@@ -197,22 +53,33 @@ final class AppState: ObservableObject {
     private var renderWorkItem: DispatchWorkItem?
     private weak var previewWebView: WKWebView?
     private var cancellables: Set<AnyCancellable> = []
+    private let defaultSource: String
 
     init(core: DiaCoreBridge = DiaCoreBridge(), preferences: AppPreferences? = nil) {
         self.core = core
         let resolvedPreferences = preferences ?? AppPreferences()
         self.preferences = resolvedPreferences
+        themes = (try? core.mermaidThemeCatalog()) ?? []
+        defaultSource = (try? core.defaultDocumentContent()) ?? ""
         source = defaultSource
-        let initialTheme = resolvedPreferences.defaultTheme
-        selectedTheme = initialTheme
-        previewHTML = Self.diagramHTML(for: defaultSource, theme: initialTheme)
+        let initialThemeID = (try? core.normalizeThemeID(resolvedPreferences.defaultThemeID)) ?? "default"
+        selectedThemeID = initialThemeID
+        previewHTML = Self.diagramHTML(
+            for: defaultSource,
+            theme: themes.first(where: { $0.id == initialThemeID })
+                ?? MermaidThemeInfo(id: "default", label: "Default", previewBackground: "#ffffff", errorColor: "#b91c1c"),
+            mermaidConfigJS: (try? core.mermaidConfigJS(themeID: initialThemeID))
+                ?? "{ startOnLoad: false, securityLevel: \"strict\", theme: \"default\" }"
+        )
         recentFilesPath = Self.makeRecentFilesPath()
 
-        resolvedPreferences.$defaultTheme
+        resolvedPreferences.$defaultThemeID
             .removeDuplicates()
-            .sink { [weak self] theme in
-                guard let self, self.selectedTheme != theme else { return }
-                self.selectedTheme = theme
+            .sink { [weak self] themeID in
+                guard let self else { return }
+                let normalizedThemeID = self.normalizedThemeID(themeID)
+                guard self.selectedThemeID != normalizedThemeID else { return }
+                self.selectedThemeID = normalizedThemeID
             }
             .store(in: &cancellables)
     }
@@ -314,11 +181,9 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = suggestedExportName()
         panel.allowedContentTypes = [UTType.png]
 
-        guard panel.runModal() == .OK, var destination = panel.url else { return }
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
 
-        if destination.pathExtension.lowercased() != "png" {
-            destination.appendPathExtension("png")
-        }
+        let finalDestination = URL(fileURLWithPath: ensuredExportPath(for: destination.path))
 
         snapshotPreviewPNG(from: webView) { [weak self] result in
             DispatchQueue.main.async {
@@ -334,7 +199,7 @@ final class AppState: ObservableObject {
                 }
 
                 do {
-                    try pngData.write(to: destination, options: .atomic)
+                    try pngData.write(to: finalDestination, options: .atomic)
                     self.clearStatus()
                 } catch {
                     self.setError("export failed: \(error.localizedDescription)")
@@ -408,14 +273,12 @@ final class AppState: ObservableObject {
         panel.nameFieldStringValue = suggestedDocumentName()
         panel.allowedContentTypes = [UTType(filenameExtension: "mmd")].compactMap { $0 }
 
-        guard panel.runModal() == .OK, var destination = panel.url else { return false }
+        guard panel.runModal() == .OK, let destination = panel.url else { return false }
 
-        if destination.pathExtension.isEmpty {
-            destination.appendPathExtension("mmd")
-        }
+        let finalDestination = ensuredDocumentPath(for: destination.path)
 
         do {
-            _ = try core.saveAs(path: destination.path, content: source)
+            _ = try core.saveAs(path: finalDestination, content: source)
             try persistAndReloadRecentFiles()
             if showStatusOnSuccess { clearStatus() }
             updateWindowTitle()
@@ -452,29 +315,15 @@ final class AppState: ObservableObject {
     }
 
     private func suggestedDocumentName() -> String {
-        if let currentPath = try? core.currentFile() {
-            let name = URL(fileURLWithPath: currentPath).lastPathComponent
-            if !name.isEmpty { return name }
-        }
-        return "diagram.mmd"
+        (try? core.suggestedDocumentName()) ?? "diagram.mmd"
     }
 
     private func suggestedExportName() -> String {
-        if let currentPath = try? core.currentFile() {
-            let url = URL(fileURLWithPath: currentPath)
-            let stem = url.deletingPathExtension().lastPathComponent
-            if !stem.isEmpty { return "\(stem).png" }
-        }
-        return "diagram.png"
+        (try? core.suggestedExportName()) ?? "diagram.png"
     }
 
     private func updateWindowTitle() {
-        let name: String
-        if let currentPath = try? core.currentFile() {
-            name = URL(fileURLWithPath: currentPath).lastPathComponent
-        } else {
-            name = "Untitled"
-        }
+        let name = (try? core.displayName()) ?? "Untitled"
 
         let isDirty = core.isDirty()
 
@@ -491,10 +340,12 @@ final class AppState: ObservableObject {
         renderWorkItem?.cancel()
 
         let source = source
-        let theme = selectedTheme
+        let themeID = selectedThemeID
+        let mermaidConfigJS = mermaidConfigJS(for: themeID)
+        let theme = themeInfo(for: themeID)
         let nextRender = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.previewHTML = Self.diagramHTML(for: source, theme: theme)
+            self.previewHTML = Self.diagramHTML(for: source, theme: theme, mermaidConfigJS: mermaidConfigJS)
             DispatchQueue.main.async {
                 self.applyPreviewZoom()
             }
@@ -506,6 +357,33 @@ final class AppState: ObservableObject {
 
     private func clearStatus() {
         statusMessage = ""
+    }
+
+    private func ensuredDocumentPath(for path: String) -> String {
+        (try? core.ensureDocumentExtension(path: path)) ?? path
+    }
+
+    private func ensuredExportPath(for path: String) -> String {
+        (try? core.ensureExportExtension(path: path)) ?? path
+    }
+
+    private func normalizedThemeID(_ themeID: String) -> String {
+        (try? core.normalizeThemeID(themeID)) ?? "default"
+    }
+
+    private func mermaidConfigJS(for themeID: String) -> String {
+        (try? core.mermaidConfigJS(themeID: themeID))
+            ?? "{ startOnLoad: false, securityLevel: \"strict\", theme: \"default\" }"
+    }
+
+    private func themeInfo(for themeID: String) -> MermaidThemeInfo {
+        themes.first(where: { $0.id == themeID })
+            ?? MermaidThemeInfo(
+                id: "default",
+                label: "Default",
+                previewBackground: "#ffffff",
+                errorColor: "#b91c1c"
+            )
     }
 
     private func snapshotPreviewPNG(from webView: WKWebView, completion: @escaping (Result<Data, Error>) -> Void) {
@@ -622,7 +500,7 @@ final class AppState: ObservableObject {
 
     // MARK: - HTML Generation
 
-    static func diagramHTML(for source: String, theme: MermaidTheme) -> String {
+    static func diagramHTML(for source: String, theme: MermaidThemeInfo, mermaidConfigJS: String) -> String {
         let sourceJSON = jsonStringLiteral(source)
         return """
         <!doctype html>
@@ -850,7 +728,7 @@ final class AppState: ObservableObject {
               if (typeof mermaid === "undefined") {
                 errorEl.textContent = "failed to load Mermaid from CDN";
               } else {
-                mermaid.initialize(\(theme.mermaidConfigJS));
+                mermaid.initialize(\(mermaidConfigJS));
                 if (!source.trim()) {
                   diagramEl.innerHTML = "";
                   panX = 0;

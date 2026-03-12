@@ -33,6 +33,18 @@ DiaResult dia_core_set_dirty(DiaCore *core, int32_t dirty);
 int32_t dia_core_is_dirty(const DiaCore *core);
 
 DiaResult dia_core_current_file(const DiaCore *core);
+DiaResult dia_core_display_name(const DiaCore *core);
+DiaResult dia_core_suggested_document_name(const DiaCore *core);
+DiaResult dia_core_suggested_export_name(const DiaCore *core);
+DiaResult dia_core_default_document_content(void);
+DiaResult dia_core_default_theme_id(void);
+DiaResult dia_core_mermaid_theme_catalog_json(void);
+DiaResult dia_core_normalize_theme_id(const char *theme_id);
+DiaResult dia_core_mermaid_config_js(const char *theme_id);
+DiaResult dia_core_mermaid_highlight_spans_json(const char *source);
+DiaResult dia_core_auto_indent_insertion(const char *prefix);
+DiaResult dia_core_ensure_document_extension(const char *path);
+DiaResult dia_core_ensure_export_extension(const char *path);
 DiaResult dia_core_recent_files_json(const DiaCore *core);
 DiaResult dia_core_load_recent_files(DiaCore *core, const char *path);
 DiaResult dia_core_save_recent_files(const DiaCore *core, const char *path);

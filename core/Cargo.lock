@@ -6,8 +6,13 @@ version = 4
 name = "dia_core"
 version = "0.1.0"
 dependencies = [
+ "dia_syntax",
  "serde_json",
 ]
+
+[[package]]
+name = "dia_syntax"
+version = "0.1.0"
 
 [[package]]
 name = "itoa"

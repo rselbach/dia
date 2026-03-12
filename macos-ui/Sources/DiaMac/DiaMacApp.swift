@@ -151,9 +151,9 @@ private struct ContentView: View {
         }
 
         ToolbarItem(placement: .automatic) {
-            Picker("Theme", selection: $state.selectedTheme) {
-                ForEach(MermaidTheme.allCases) { theme in
-                    Text(theme.label).tag(theme)
+            Picker("Theme", selection: $state.selectedThemeID) {
+                ForEach(state.themes) { theme in
+                    Text(theme.label).tag(theme.id)
                 }
             }
             .pickerStyle(.menu)
@@ -264,9 +264,9 @@ private struct DiaCommands: Commands {
 
         CommandGroup(after: .toolbar) {
             Menu("Theme") {
-                Picker("Theme", selection: $state.selectedTheme) {
-                    ForEach(MermaidTheme.allCases) { theme in
-                        Text(theme.label).tag(theme)
+                Picker("Theme", selection: $state.selectedThemeID) {
+                    ForEach(state.themes) { theme in
+                        Text(theme.label).tag(theme.id)
                     }
                 }
             }

@@ -4,9 +4,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use dia_core::DiaCore;
-use dia_syntax::{highlight_spans, HighlightKind};
+use dia_syntax::{auto_indent_insertion, highlight_spans, leading_indentation, HighlightKind};
 use gtk::{Application, ApplicationWindow};
 use gtk4 as gtk;
+use serde::Deserialize;
 use webkit6::prelude::*;
 use webkit6::{ContextMenuItem, SnapshotOptions, SnapshotRegion, WebView};
 
@@ -17,12 +18,15 @@ const TAG_MERMAID_OPERATOR: &str = "dia-mermaid-operator";
 const TAG_MERMAID_COMMENT: &str = "dia-mermaid-comment";
 const TAG_MERMAID_LABEL: &str = "dia-mermaid-label";
 
-const DEFAULT_CONTENT: &str = "flowchart TD
-    A[Start] --> B{Is it working?}
-    B -->|Yes| C[Great!]
-    B -->|No| D[Debug]
-    D --> B
-";
+#[derive(Deserialize)]
+struct MermaidThemeInfo {
+    id: String,
+    label: String,
+    #[serde(rename = "previewBackground")]
+    preview_background: String,
+    #[serde(rename = "errorColor")]
+    error_color: String,
+}
 
 fn main() {
     let app = Application::builder().application_id(APP_ID).build();
@@ -76,7 +80,7 @@ impl UiState {
 
         let text_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
         install_editor_tags(&text_buffer);
-        text_buffer.set_text(DEFAULT_CONTENT);
+        text_buffer.set_text(DiaCore::default_document_content());
 
         let editor = gtk::TextView::with_buffer(&text_buffer);
         editor.set_monospace(true);
@@ -255,7 +259,7 @@ impl UiState {
             core.new_document();
         }
 
-        self.set_editor_content(DEFAULT_CONTENT);
+        self.set_editor_content(DiaCore::default_document_content());
         self.clear_status();
         self.update_title();
         self.schedule_render();
@@ -292,20 +296,13 @@ impl UiState {
     }
 
     fn handle_export_png(&self) {
-        let suggested = self
-            .core
-            .borrow()
-            .current_file()
-            .and_then(|path| path.file_stem())
-            .and_then(|name| name.to_str())
-            .map(|name| format!("{name}.png"))
-            .unwrap_or("diagram.png".to_string());
+        let suggested = self.core.borrow().suggested_export_name();
 
         let Some(path) = self.choose_export_path(&suggested) else {
             return;
         };
 
-        let final_path = ensure_png_extension(path);
+        let final_path = DiaCore::ensure_export_extension(&path);
         let status = self.status.clone();
         self.preview.snapshot(
             SnapshotRegion::Visible,
@@ -366,20 +363,13 @@ impl UiState {
     }
 
     fn handle_save_as_with_content(&self, content: &str) {
-        let suggested = self
-            .core
-            .borrow()
-            .current_file()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("diagram.mmd")
-            .to_owned();
+        let suggested = self.core.borrow().suggested_document_name();
 
         let Some(path) = self.choose_save_path(&suggested) else {
             return;
         };
 
-        let final_path = ensure_mmd_extension(path);
+        let final_path = DiaCore::ensure_document_extension(&path);
         match self.core.borrow_mut().save_as(&final_path, content) {
             Ok(_) => {
                 self.clear_status();
@@ -556,10 +546,9 @@ impl UiState {
             .buffer
             .text(&line_start, &insert_iter, false)
             .to_string();
-        let indent = leading_indentation(&prefix);
 
         let mut insert_iter = self.buffer.iter_at_mark(&insert_mark);
-        let insert_text = format!("\n{indent}");
+        let insert_text = auto_indent_insertion(&prefix);
         self.buffer.insert(&mut insert_iter, &insert_text);
         true
     }
@@ -593,13 +582,7 @@ impl UiState {
     fn update_title(&self) {
         let (name, dirty) = {
             let core = self.core.borrow();
-            let file_name = core
-                .current_file()
-                .and_then(|path| path.file_name())
-                .and_then(|value| value.to_str())
-                .unwrap_or("Untitled")
-                .to_owned();
-            (file_name, core.is_dirty())
+            (core.display_name(), core.is_dirty())
         };
 
         let dirty_suffix = if dirty { " *" } else { "" };
@@ -637,20 +620,6 @@ fn recent_files_path() -> Result<PathBuf, String> {
         return Err("could not resolve user config directory".to_string());
     };
     Ok(config_root.join("dia").join("recent-files.json"))
-}
-
-fn ensure_mmd_extension(mut path: PathBuf) -> PathBuf {
-    if path.extension().is_none() {
-        path.set_extension("mmd");
-    }
-    path
-}
-
-fn ensure_png_extension(mut path: PathBuf) -> PathBuf {
-    if path.extension().is_none() {
-        path.set_extension("png");
-    }
-    path
 }
 
 fn mermaid_bundle_path() -> PathBuf {
@@ -705,12 +674,6 @@ fn should_handle_auto_indent(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierTy
         | gtk::gdk::ModifierType::META_MASK;
 
     !modifiers.intersects(blocked)
-}
-
-fn leading_indentation(line: &str) -> String {
-    line.chars()
-        .take_while(|value| matches!(value, ' ' | '\t'))
-        .collect()
 }
 
 fn install_editor_tags(buffer: &gtk::TextBuffer) {
@@ -794,12 +757,15 @@ fn apply_tag_range(buffer: &gtk::TextBuffer, tag_name: &str, start: i32, end: i3
 }
 
 fn diagram_html(source: &str) -> String {
+    let default_theme = default_theme_info();
     let source_json = match serde_json::to_string(source) {
         Ok(value) => value,
         Err(err) => {
             let escaped = html_escape(&format!("failed to encode source: {err}"));
             return format!(
-                "<!doctype html><html><body><pre style='color:#b00020'>{escaped}</pre></body></html>"
+                "<!doctype html><html><body style='background:{}'><pre style='color:{}'>{escaped}</pre></body></html>",
+                default_theme.preview_background,
+                default_theme.error_color,
             );
         }
     };
@@ -815,7 +781,7 @@ fn diagram_html(source: &str) -> String {
         margin: 0;
         height: 100%;
         font-family: "Iosevka", "Fira Code", monospace;
-        background: #f8fafc;
+        background: {};
       }}
       #root {{
         height: 100%;
@@ -831,7 +797,7 @@ fn diagram_html(source: &str) -> String {
         max-height: calc(100vh - 40px);
       }}
       #error {{
-        color: #b00020;
+        color: {};
         white-space: pre-wrap;
         font-family: monospace;
       }}
@@ -850,7 +816,7 @@ fn diagram_html(source: &str) -> String {
       if (typeof mermaid === "undefined") {{
         errorEl.textContent = "failed to load local Mermaid bundle";
       }} else {{
-      mermaid.initialize({{ startOnLoad: false, securityLevel: "strict", theme: "default" }});
+      mermaid.initialize({{ startOnLoad: false, securityLevel: "strict", theme: "{}" }});
 
       if (!source.trim()) {{
         diagramEl.textContent = "";
@@ -869,9 +835,36 @@ fn diagram_html(source: &str) -> String {
       }}
     </script>
   </body>
-</html>
-"#
+    </html>
+    "#,
+        default_theme.preview_background,
+        default_theme.error_color,
+        DiaCore::default_theme_id()
     )
+}
+
+fn default_theme_info() -> MermaidThemeInfo {
+    let fallback = MermaidThemeInfo {
+        id: "default".to_string(),
+        label: "Default".to_string(),
+        preview_background: "#ffffff".to_string(),
+        error_color: "#b91c1c".to_string(),
+    };
+
+    let catalog = match DiaCore::mermaid_theme_catalog_json() {
+        Ok(value) => value,
+        Err(_) => return fallback,
+    };
+
+    let themes: Vec<MermaidThemeInfo> = match serde_json::from_str(&catalog) {
+        Ok(value) => value,
+        Err(_) => return fallback,
+    };
+
+    themes
+        .into_iter()
+        .find(|theme| theme.id == DiaCore::default_theme_id())
+        .unwrap_or(fallback)
 }
 
 fn html_escape(value: &str) -> String {
@@ -889,7 +882,8 @@ fn build_ui(app: &Application) {
 
 #[cfg(test)]
 mod tests {
-    use super::{leading_indentation, should_handle_auto_indent};
+    use super::should_handle_auto_indent;
+    use dia_syntax::leading_indentation;
     use gtk4 as gtk;
 
     #[test]

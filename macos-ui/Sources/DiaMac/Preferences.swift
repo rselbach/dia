@@ -19,9 +19,9 @@ final class AppPreferences: ObservableObject {
     static let defaultEditorFontSize: CGFloat = 14
     static let fontSizeRange: ClosedRange<Double> = 10 ... 24
 
-    @Published var defaultTheme: MermaidTheme {
+    @Published var defaultThemeID: String {
         didSet {
-            defaults.set(defaultTheme.rawValue, forKey: Keys.defaultTheme)
+            defaults.set(defaultThemeID, forKey: Keys.defaultTheme)
         }
     }
 
@@ -37,18 +37,21 @@ final class AppPreferences: ObservableObject {
         }
     }
 
+    let themes: [MermaidThemeInfo]
     let fontOptions: [EditorFontOption]
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let core = DiaCoreBridge()
+        themes = (try? core.mermaidThemeCatalog()) ?? []
         fontOptions = Self.loadFontOptions()
 
-        let storedTheme = defaults.string(forKey: Keys.defaultTheme)
-            .flatMap(MermaidTheme.init(rawValue:))
-            ?? .defaultTheme
-        defaultTheme = storedTheme
+        let defaultThemeIDFromCore = (try? core.defaultThemeID()) ?? "default"
+        let storedThemeID = defaults.string(forKey: Keys.defaultTheme) ?? defaultThemeIDFromCore
+        let normalizedStoredThemeID = (try? core.normalizeThemeID(storedThemeID)) ?? defaultThemeIDFromCore
+        defaultThemeID = normalizedStoredThemeID
 
         let fallbackFontName = Self.defaultFontOption(in: fontOptions).postScriptName
         let storedFontName = defaults.string(forKey: Keys.editorFontName)
@@ -157,9 +160,9 @@ struct PreferencesView: View {
             }
 
             LabeledContent("Default Theme") {
-                Picker("Default Theme", selection: $preferences.defaultTheme) {
-                    ForEach(MermaidTheme.allCases) { theme in
-                        Text(theme.label).tag(theme)
+                Picker("Default Theme", selection: $preferences.defaultThemeID) {
+                    ForEach(preferences.themes) { theme in
+                        Text(theme.label).tag(theme.id)
                     }
                 }
                 .labelsHidden()
