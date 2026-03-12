@@ -1,0 +1,552 @@
+import AppKit
+import SwiftUI
+
+private enum EditorTheme {
+    private struct Palette {
+        let background: NSColor
+        let gutterBackground: NSColor
+        let text: NSColor
+        let cursor: NSColor
+        let selection: NSColor
+        let lineNumber: NSColor
+        let keyword: NSColor
+        let arrow: NSColor
+        let comment: NSColor
+        let label: NSColor
+    }
+
+    private static let darkPalette = Palette(
+        background: NSColor(srgbRed: 30 / 255, green: 30 / 255, blue: 46 / 255, alpha: 1),
+        gutterBackground: NSColor(srgbRed: 24 / 255, green: 24 / 255, blue: 37 / 255, alpha: 1),
+        text: NSColor(srgbRed: 205 / 255, green: 214 / 255, blue: 244 / 255, alpha: 1),
+        cursor: NSColor(srgbRed: 245 / 255, green: 224 / 255, blue: 220 / 255, alpha: 1),
+        selection: NSColor(srgbRed: 69 / 255, green: 71 / 255, blue: 90 / 255, alpha: 1),
+        lineNumber: NSColor(srgbRed: 88 / 255, green: 91 / 255, blue: 112 / 255, alpha: 1),
+        keyword: NSColor(srgbRed: 137 / 255, green: 180 / 255, blue: 250 / 255, alpha: 1),
+        arrow: NSColor(srgbRed: 249 / 255, green: 226 / 255, blue: 175 / 255, alpha: 1),
+        comment: NSColor(srgbRed: 108 / 255, green: 112 / 255, blue: 134 / 255, alpha: 1),
+        label: NSColor(srgbRed: 166 / 255, green: 227 / 255, blue: 161 / 255, alpha: 1)
+    )
+
+    private static let lightPalette = Palette(
+        background: NSColor(srgbRed: 239 / 255, green: 241 / 255, blue: 245 / 255, alpha: 1),
+        gutterBackground: NSColor(srgbRed: 230 / 255, green: 233 / 255, blue: 239 / 255, alpha: 1),
+        text: NSColor(srgbRed: 76 / 255, green: 79 / 255, blue: 105 / 255, alpha: 1),
+        cursor: NSColor(srgbRed: 220 / 255, green: 138 / 255, blue: 120 / 255, alpha: 1),
+        selection: NSColor(srgbRed: 204 / 255, green: 208 / 255, blue: 218 / 255, alpha: 1),
+        lineNumber: NSColor(srgbRed: 156 / 255, green: 160 / 255, blue: 176 / 255, alpha: 1),
+        keyword: NSColor(srgbRed: 30 / 255, green: 102 / 255, blue: 245 / 255, alpha: 1),
+        arrow: NSColor(srgbRed: 223 / 255, green: 142 / 255, blue: 29 / 255, alpha: 1),
+        comment: NSColor(srgbRed: 140 / 255, green: 143 / 255, blue: 161 / 255, alpha: 1),
+        label: NSColor(srgbRed: 64 / 255, green: 160 / 255, blue: 43 / 255, alpha: 1)
+    )
+
+    private static func color(_ keyPath: KeyPath<Palette, NSColor>) -> NSColor {
+        NSColor(name: nil) { appearance in
+            switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
+            case .darkAqua:
+                darkPalette[keyPath: keyPath]
+            default:
+                lightPalette[keyPath: keyPath]
+            }
+        }
+    }
+
+    static let background = color(\.background)
+    static let gutterBackground = color(\.gutterBackground)
+    static let text = color(\.text)
+    static let cursor = color(\.cursor)
+    static let selection = color(\.selection)
+    static let lineNumber = color(\.lineNumber)
+    static let keyword = color(\.keyword)
+    static let arrow = color(\.arrow)
+    static let comment = color(\.comment)
+    static let label = color(\.label)
+}
+
+struct CodeEditorView: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> EditorContainerView {
+        let scrollView = configuredScrollView()
+        let textView = configuredTextView(in: scrollView)
+        let gutterView = LineNumberGutterView(textView: textView, scrollView: scrollView)
+        let containerView = EditorContainerView(scrollView: scrollView, gutterView: gutterView)
+
+        context.coordinator.textView = textView
+        context.coordinator.scrollView = scrollView
+        textView.delegate = context.coordinator
+
+        containerView.onLayout = { [self, weak textView, weak scrollView] in
+            guard let textView,
+                  let scrollView
+            else { return }
+
+            synchronizeLayout(for: textView, in: scrollView)
+        }
+
+        context.coordinator.installBoundsObserver()
+
+        updateTextView(textView, with: text)
+        synchronizeLayout(for: textView, in: scrollView)
+        logEditorState(textView, context: "makeNSView")
+        return containerView
+    }
+
+    func updateNSView(_ nsView: EditorContainerView, context: Context) {
+        guard let textView = nsView.textView else { return }
+
+        if textView.string != text {
+            context.coordinator.isUpdatingFromSwiftUI = true
+            let selectedRanges = textView.selectedRanges
+            updateTextView(textView, with: text)
+            textView.selectedRanges = selectedRanges
+            context.coordinator.isUpdatingFromSwiftUI = false
+        }
+
+        synchronizeLayout(for: textView, in: nsView.scrollView)
+        nsView.needsLayout = true
+        nsView.gutterView.needsDisplay = true
+        logEditorState(textView, context: "updateNSView")
+    }
+
+    private func configuredScrollView() -> NSScrollView {
+        let scrollView = NSScrollView(frame: .zero)
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = EditorTheme.background
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        return scrollView
+    }
+
+    private func configuredTextView(in scrollView: NSScrollView) -> NSTextView {
+        let textView: NSTextView
+        if let existingTextView = scrollView.documentView as? NSTextView {
+            textView = existingTextView
+        } else {
+            let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            let textContainer = NSTextContainer(size: NSSize(width: 1, height: CGFloat.greatestFiniteMagnitude))
+            textContainer.widthTracksTextView = true
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+
+            let createdTextView = CodeTextView(frame: .zero, textContainer: textContainer)
+            scrollView.documentView = createdTextView
+            textView = createdTextView
+        }
+
+        let contentSize = scrollView.contentSize
+
+        fputs("[editor] configured textViewClass=\(String(describing: type(of: textView))) scrollViewClass=\(String(describing: type(of: scrollView))) contentSize=\(contentSize.debugDescription)\n", stderr)
+
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 8, height: 12)
+        textView.postsFrameChangedNotifications = true
+
+        textView.textContainer?.containerSize = NSSize(
+            width: contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.widthTracksTextView = true
+
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.allowsUndo = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.usesFindPanel = true
+        textView.font = MermaidHighlighter.font
+        textView.drawsBackground = true
+        textView.backgroundColor = EditorTheme.background
+        textView.textColor = EditorTheme.text
+        textView.insertionPointColor = EditorTheme.cursor
+        textView.selectedTextAttributes = [
+            .backgroundColor: EditorTheme.selection,
+        ]
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.typingAttributes = MermaidHighlighter.baseAttributes
+
+        let seededSize = NSSize(
+            width: max(contentSize.width, 1),
+            height: max(contentSize.height, 1)
+        )
+        textView.frame = NSRect(origin: .zero, size: seededSize)
+
+        return textView
+    }
+
+    private func updateTextView(_ textView: NSTextView, with text: String) {
+        textView.string = text
+        MermaidHighlighter.apply(to: textView)
+        textView.typingAttributes = MermaidHighlighter.baseAttributes
+    }
+
+    private func synchronizeLayout(for textView: NSTextView, in scrollView: NSScrollView) {
+        guard let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager
+        else { return }
+
+        let clipBounds = scrollView.contentView.bounds
+        let availableWidth = max(clipBounds.width, scrollView.contentSize.width, 1)
+        let availableHeight = max(clipBounds.height, scrollView.contentSize.height, 1)
+
+        textView.minSize = NSSize(width: 0, height: availableHeight)
+        textView.setFrameSize(NSSize(width: availableWidth, height: max(textView.frame.height, availableHeight)))
+
+        let inset = textView.textContainerInset
+        let containerWidth = max(availableWidth - (inset.width * 2), 1)
+        textContainer.containerSize = NSSize(
+            width: containerWidth,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+
+        layoutManager.ensureLayout(for: textContainer)
+
+        let usedHeight = layoutManager.usedRect(for: textContainer).height
+        let targetHeight = max(usedHeight + (inset.height * 2), availableHeight)
+        if abs(textView.frame.height - targetHeight) > 0.5 {
+            textView.setFrameSize(NSSize(width: availableWidth, height: targetHeight))
+        }
+
+        textView.needsDisplay = true
+    }
+
+    private func logEditorState(_ textView: NSTextView, context: String) {
+        let frame = textView.frame
+        let bounds = textView.bounds
+        let visibleRect = textView.visibleRect
+        let containerSize = textView.textContainer?.containerSize ?? .zero
+        let containerOrigin = textView.textContainerOrigin
+        let inset = textView.textContainerInset
+        let stringCount = textView.string.count
+        let textColor = textView.textColor?.description ?? "nil"
+        let firstAttributes: String
+        if let textStorage = textView.textStorage, textStorage.length > 0 {
+            let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
+            firstAttributes = attrs.map { "\($0.key.rawValue)=\($0.value)" }.joined(separator: ",")
+        } else {
+            firstAttributes = "empty"
+        }
+
+        var glyphDebug = "no-layout"
+        if let layoutManager = textView.layoutManager,
+           let textContainer = textView.textContainer,
+           layoutManager.numberOfGlyphs > 0
+        {
+            let glyphRange = NSRange(location: 0, length: min(layoutManager.numberOfGlyphs, 16))
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let firstLocation = layoutManager.location(forGlyphAt: 0)
+            glyphDebug = "glyphs=\(layoutManager.numberOfGlyphs) used=\(usedRect.debugDescription) firstRect=\(boundingRect.debugDescription) firstLoc=\(firstLocation.debugDescription)"
+        }
+
+        fputs(
+            "[editor] \(context) len=\(stringCount) frame=\(frame.debugDescription) bounds=\(bounds.debugDescription) visible=\(visibleRect.debugDescription) container=\(containerSize.debugDescription) origin=\(containerOrigin.debugDescription) inset=\(inset.debugDescription) color=\(textColor) attrs=\(firstAttributes) \(glyphDebug)\n",
+            stderr
+        )
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: CodeEditorView
+        var isUpdatingFromSwiftUI = false
+        weak var textView: NSTextView?
+        weak var scrollView: NSScrollView?
+        var boundsObserver: NSObjectProtocol?
+
+        init(_ parent: CodeEditorView) {
+            self.parent = parent
+        }
+
+        deinit {
+            if let boundsObserver {
+                NotificationCenter.default.removeObserver(boundsObserver)
+            }
+        }
+
+        func installBoundsObserver() {
+            guard boundsObserver == nil,
+                  let scrollView
+            else { return }
+
+            boundsObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self,
+                      let textView = self.textView,
+                      let scrollView = self.scrollView
+                else { return }
+
+                self.parent.synchronizeLayout(for: textView, in: scrollView)
+                self.parent.logEditorState(textView, context: "boundsDidChange")
+            }
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard !isUpdatingFromSwiftUI,
+                  let textView = notification.object as? NSTextView
+            else { return }
+
+            parent.text = textView.string
+            MermaidHighlighter.apply(to: textView)
+            textView.typingAttributes = MermaidHighlighter.baseAttributes
+            if let scrollView = self.scrollView {
+                parent.synchronizeLayout(for: textView, in: scrollView)
+            }
+            textView.enclosingScrollView?.superview?.needsDisplay = true
+            parent.logEditorState(textView, context: "textDidChange")
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)),
+                  let selectedRange = textView.selectedRanges.first?.rangeValue
+            else { return false }
+
+            let content = textView.string as NSString
+            let location = min(selectedRange.location, content.length)
+            let lineRange = content.lineRange(for: NSRange(location: location, length: 0))
+            let line = content.substring(with: lineRange)
+            let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+
+            textView.insertText("\n\(indentation)", replacementRange: selectedRange)
+            return true
+        }
+    }
+}
+
+final class EditorContainerView: NSView {
+    private enum Metrics {
+        static let gutterWidth: CGFloat = 44
+    }
+
+    let scrollView: NSScrollView
+    let gutterView: LineNumberGutterView
+    var onLayout: (() -> Void)?
+
+    var textView: NSTextView? {
+        scrollView.documentView as? NSTextView
+    }
+
+    init(scrollView: NSScrollView, gutterView: LineNumberGutterView) {
+        self.scrollView = scrollView
+        self.gutterView = gutterView
+        super.init(frame: .zero)
+        addSubview(gutterView)
+        addSubview(scrollView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        let gutterWidth = min(Metrics.gutterWidth, bounds.width)
+        gutterView.frame = NSRect(x: 0, y: 0, width: gutterWidth, height: bounds.height)
+        scrollView.frame = NSRect(
+            x: gutterWidth,
+            y: 0,
+            width: max(bounds.width - gutterWidth, 0),
+            height: bounds.height
+        )
+        gutterView.needsDisplay = true
+        onLayout?()
+    }
+}
+
+private final class CodeTextView: NSTextView {
+    override var isOpaque: Bool {
+        true
+    }
+}
+
+final class LineNumberGutterView: NSView {
+    private weak var textView: NSTextView?
+    private weak var scrollView: NSScrollView?
+    private let numberFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    private lazy var numberAttributes: [NSAttributedString.Key: Any] = [
+        .font: numberFont,
+        .foregroundColor: EditorTheme.lineNumber,
+    ]
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    init(textView: NSTextView, scrollView: NSScrollView) {
+        self.textView = textView
+        self.scrollView = scrollView
+        super.init(frame: .zero)
+        wantsLayer = true
+
+        let notificationCenter = NotificationCenter.default
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(setNeedsRedisplay),
+            name: NSText.didChangeNotification,
+            object: textView
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(setNeedsRedisplay),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
+    }
+
+    @available(*, unavailable)
+    required init(coder _: NSCoder) { fatalError() }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func setNeedsRedisplay() {
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard let textView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer,
+              let scrollView
+        else { return }
+
+        EditorTheme.gutterBackground.setFill()
+        dirtyRect.fill()
+
+        EditorTheme.selection.withAlphaComponent(0.4).setStroke()
+        let borderX = bounds.width - 0.5
+        NSBezierPath.strokeLine(
+            from: NSPoint(x: borderX, y: dirtyRect.minY),
+            to: NSPoint(x: borderX, y: dirtyRect.maxY)
+        )
+
+        let content = textView.string as NSString
+        let visibleRect = scrollView.contentView.bounds
+        let inset = textView.textContainerInset
+
+        guard content.length > 0 else {
+            drawNumber(1, y: inset.height, lineHeight: 17)
+            return
+        }
+
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+
+        var lineNumber = 1
+        let prefixEnd = min(characterRange.location, content.length)
+        for index in 0 ..< prefixEnd where content.character(at: index) == 0x0A {
+            lineNumber += 1
+        }
+
+        var characterIndex = characterRange.location
+        while characterIndex < NSMaxRange(characterRange), characterIndex < content.length {
+            let lineRange = content.lineRange(for: NSRange(location: characterIndex, length: 0))
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let y = lineRect.minY + inset.height - visibleRect.minY
+
+            drawNumber(lineNumber, y: y, lineHeight: lineRect.height)
+
+            lineNumber += 1
+            let nextCharacterIndex = NSMaxRange(lineRange)
+            guard nextCharacterIndex > characterIndex else { break }
+            characterIndex = nextCharacterIndex
+        }
+    }
+
+    private func drawNumber(_ number: Int, y: CGFloat, lineHeight: CGFloat) {
+        let string = NSAttributedString(string: "\(number)", attributes: numberAttributes)
+        let size = string.size()
+        string.draw(at: NSPoint(
+            x: bounds.width - size.width - 8,
+            y: y + (lineHeight - size.height) / 2
+        ))
+    }
+}
+
+private enum MermaidHighlighter {
+    static let font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    static let baseAttributes: [NSAttributedString.Key: Any] = [
+        .font: font,
+        .foregroundColor: EditorTheme.text,
+    ]
+
+    private static let keywords: Set<String> = [
+        "flowchart", "graph", "sequencediagram", "classdiagram", "statediagram",
+        "statediagram-v2", "erdiagram", "journey", "gantt", "pie", "mindmap",
+        "timeline", "quadrantchart", "gitgraph", "subgraph", "end", "direction",
+        "classdef", "class", "click", "linkstyle", "style", "section", "title",
+        "participant", "actor", "loop", "alt", "else", "opt", "par", "and",
+        "critical", "break", "rect", "note", "activate", "deactivate",
+        "tb", "bt", "lr", "rl", "td", "dt",
+    ]
+
+    private static let wordPattern = try! NSRegularExpression(pattern: "[a-zA-Z_][a-zA-Z0-9_-]*")
+    private static let operatorPattern = try! NSRegularExpression(pattern: "-\\.->|==>|<--|-->|---|--x|--o|:::")
+    private static let quotedPattern = try! NSRegularExpression(pattern: "\"[^\"]*\"")
+    private static let pipePattern = try! NSRegularExpression(pattern: "\\|[^|]+\\|")
+
+    static func apply(to textView: NSTextView) {
+        guard let textStorage = textView.textStorage else { return }
+
+        let string = textStorage.string
+        let nsString = string as NSString
+        let fullRange = NSRange(location: 0, length: nsString.length)
+
+        textStorage.beginEditing()
+        textStorage.setAttributes(baseAttributes, range: fullRange)
+
+        var lineStart = 0
+        while lineStart < nsString.length {
+            let lineRange = nsString.lineRange(for: NSRange(location: lineStart, length: 0))
+            let line = nsString.substring(with: lineRange)
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmedLine.hasPrefix("%%") {
+                textStorage.addAttribute(.foregroundColor, value: EditorTheme.comment, range: lineRange)
+            } else {
+                for match in wordPattern.matches(in: string, range: lineRange) {
+                    let word = nsString.substring(with: match.range)
+                    guard keywords.contains(word.lowercased()) else { continue }
+                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.keyword, range: match.range)
+                }
+
+                for match in operatorPattern.matches(in: string, range: lineRange) {
+                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.arrow, range: match.range)
+                }
+
+                for match in quotedPattern.matches(in: string, range: lineRange) {
+                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.label, range: match.range)
+                }
+
+                for match in pipePattern.matches(in: string, range: lineRange) {
+                    textStorage.addAttribute(.foregroundColor, value: EditorTheme.label, range: match.range)
+                }
+            }
+
+            lineStart = NSMaxRange(lineRange)
+        }
+
+        textStorage.endEditing()
+    }
+}
