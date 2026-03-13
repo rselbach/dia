@@ -2,6 +2,9 @@
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="text/x-mermaid">
     <comment>Mermaid diagram</comment>
+    <sub-class-of type="text/plain"/>
+    <alias type="text/vnd.mermaid"/>
+    <icon name="dia"/>
     <glob pattern="*.mmd"/>
     <glob pattern="*.mermaid"/>
   </mime-type>

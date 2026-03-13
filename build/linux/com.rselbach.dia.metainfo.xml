@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.github.rselbach.dia</id>
+  <id>com.rselbach.dia</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>Dia</name>
@@ -24,13 +24,13 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">dia.desktop</launchable>
+  <launchable type="desktop-id">com.rselbach.dia.desktop</launchable>
 
   <url type="homepage">https://github.com/rselbach/dia</url>
   <url type="bugtracker">https://github.com/rselbach/dia/issues</url>
   <url type="vcs-browser">https://github.com/rselbach/dia</url>
 
-  <developer id="com.github.rselbach">
+  <developer id="com.rselbach">
     <name>Roberto Selbach</name>
   </developer>
 

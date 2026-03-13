@@ -6,6 +6,8 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly APP_NAME="dia"
+readonly DESKTOP_FILE_NAME="com.rselbach.dia.desktop"
+readonly METAINFO_FILE_NAME="com.rselbach.dia.metainfo.xml"
 readonly MERMAID_BUNDLE_NAME="mermaid.min.js"
 
 VERSION=""
@@ -31,6 +33,24 @@ require_file() {
   fi
 }
 
+resolve_file_path() {
+  local path="${1}"
+  local parent_dir
+
+  parent_dir="$(cd "$(dirname "${path}")" && pwd)"
+  printf '%s/%s\n' "${parent_dir}" "$(basename "${path}")"
+}
+
+resolve_dir_path() {
+  local path="${1}"
+
+  mkdir -p "${path}"
+  (
+    cd "${path}"
+    pwd
+  )
+}
+
 copy_common_payload() {
   local staging_dir="${1}"
 
@@ -39,11 +59,11 @@ copy_common_payload() {
   install -Dm755 "${BINARY_PATH}" "${staging_dir}/${APP_NAME}"
   install -Dm755 "${REPO_ROOT}/build/linux/install.sh" \
     "${staging_dir}/install.sh"
-  install -Dm644 "${REPO_ROOT}/build/linux/dia.desktop" \
-    "${staging_dir}/dia.desktop"
+  install -Dm644 "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}" \
+    "${staging_dir}/${DESKTOP_FILE_NAME}"
   install -Dm644 \
-    "${REPO_ROOT}/build/linux/com.github.rselbach.dia.metainfo.xml" \
-    "${staging_dir}/com.github.rselbach.dia.metainfo.xml"
+    "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}" \
+    "${staging_dir}/${METAINFO_FILE_NAME}"
   install -Dm644 "${REPO_ROOT}/build/linux/x-mermaid.xml" \
     "${staging_dir}/x-mermaid.xml"
   install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
@@ -107,11 +127,11 @@ populate_appdir() {
 
   install -Dm755 "${BINARY_PATH}" "${appdir}/usr/bin/${APP_NAME}"
   install -Dm755 "${REPO_ROOT}/build/linux/AppRun" "${appdir}/AppRun"
-  install -Dm644 "${REPO_ROOT}/build/linux/dia.desktop" \
-    "${appdir}/usr/share/applications/dia.desktop"
+  install -Dm644 "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}" \
+    "${appdir}/usr/share/applications/${DESKTOP_FILE_NAME}"
   install -Dm644 \
-    "${REPO_ROOT}/build/linux/com.github.rselbach.dia.metainfo.xml" \
-    "${appdir}/usr/share/metainfo/com.github.rselbach.dia.metainfo.xml"
+    "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}" \
+    "${appdir}/usr/share/metainfo/${METAINFO_FILE_NAME}"
   install -Dm644 "${REPO_ROOT}/build/linux/x-mermaid.xml" \
     "${appdir}/usr/share/mime/packages/x-mermaid.xml"
   install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
@@ -171,7 +191,7 @@ build_appimage() {
       NO_STRIP=true \
       "${linuxdeploy_bin}" \
       --appdir "${appdir}" \
-      --desktop-file "${appdir}/usr/share/applications/dia.desktop" \
+      --desktop-file "${appdir}/usr/share/applications/${DESKTOP_FILE_NAME}" \
       --icon-file "${appdir}/usr/share/icons/hicolor/512x512/apps/dia.png" \
       --executable "${appdir}/usr/bin/dia" \
       --deploy-deps-only "${webkit_dst_dir}/WebKitNetworkProcess" \
@@ -232,16 +252,17 @@ parse_args() {
 main() {
   parse_args "$@"
 
+  BINARY_PATH="$(resolve_file_path "${BINARY_PATH}")"
+  OUTPUT_DIR="$(resolve_dir_path "${OUTPUT_DIR}")"
+
   require_file "${BINARY_PATH}"
-  require_file "${REPO_ROOT}/build/linux/dia.desktop"
-  require_file "${REPO_ROOT}/build/linux/com.github.rselbach.dia.metainfo.xml"
+  require_file "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}"
+  require_file "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}"
   require_file "${REPO_ROOT}/build/linux/x-mermaid.xml"
   require_file "${REPO_ROOT}/build/linux/install.sh"
   require_file "${REPO_ROOT}/build/linux/icon.svg"
   require_file "${REPO_ROOT}/build/linux/AppRun"
   require_file "${REPO_ROOT}/linux-ui/vendor/${MERMAID_BUNDLE_NAME}"
-
-  mkdir -p "${OUTPUT_DIR}"
 
   local staging_name="dia-${VERSION}-linux-amd64"
   local staging_dir="${OUTPUT_DIR}/${staging_name}"

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use webkit6::prelude::*;
 use webkit6::{ContextMenuItem, SnapshotOptions, SnapshotRegion, WebView};
 
-const APP_ID: &str = "com.github.rselbach.dia.gtk";
+const APP_ID: &str = "com.rselbach.dia";
 const MERMAID_BUNDLE_NAME: &str = "mermaid.min.js";
 const TAG_MERMAID_KEYWORD: &str = "dia-mermaid-keyword";
 const TAG_MERMAID_OPERATOR: &str = "dia-mermaid-operator";
@@ -21,6 +21,27 @@ const TAG_MERMAID_LABEL: &str = "dia-mermaid-label";
 const DEFAULT_EDITOR_FONT_SIZE: f64 = 14.0;
 const MIN_EDITOR_FONT_SIZE: f64 = 10.0;
 const MAX_EDITOR_FONT_SIZE: f64 = 24.0;
+const APP_CHROME_CSS: &str = r#"
+menubutton#floating-preview-menu > button {
+  border-radius: 8px;
+  min-width: 36px;
+  min-height: 36px;
+  background: rgba(22, 26, 36, 0.75);
+  border: 1px solid rgba(109, 146, 201, 0.55);
+  color: #f8fbff;
+  box-shadow: 0 6px 20px rgba(10, 14, 20, 0.35);
+}
+
+menubutton#floating-preview-menu > button:hover {
+  background: rgba(35, 43, 61, 0.88);
+  border-color: rgba(140, 179, 235, 0.8);
+}
+
+#status-line {
+  color: #fca5a5;
+  margin-top: 2px;
+}
+"#;
 
 #[derive(Clone, Deserialize)]
 struct MermaidThemeInfo {
@@ -72,9 +93,41 @@ struct AppSetup {
 }
 
 fn main() {
-    let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(build_ui);
+    let app = Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk::gio::ApplicationFlags::HANDLES_OPEN)
+        .build();
+
+    let ui_state = Rc::new(RefCell::new(None::<Rc<UiState>>));
+
+    {
+        let ui_state = ui_state.clone();
+        app.connect_activate(move |app| {
+            let ui = ensure_ui_state(app, &ui_state);
+            ui.startup();
+        });
+    }
+
+    {
+        let ui_state = ui_state.clone();
+        app.connect_open(move |app, files, _| {
+            let ui = ensure_ui_state(app, &ui_state);
+            ui.startup();
+            ui.handle_open_files(files);
+        });
+    }
+
     app.run();
+}
+
+fn ensure_ui_state(app: &Application, state: &RefCell<Option<Rc<UiState>>>) -> Rc<UiState> {
+    if let Some(ui) = state.borrow().as_ref().cloned() {
+        return ui;
+    }
+
+    let ui = UiState::new(app);
+    *state.borrow_mut() = Some(ui.clone());
+    ui
 }
 
 struct UiState {
@@ -94,6 +147,7 @@ struct UiState {
     render_timer: RefCell<Option<gtk::glib::SourceId>>,
     highlight_timer: RefCell<Option<gtk::glib::SourceId>>,
     suppress_dirty_signal: Cell<bool>,
+    started: Cell<bool>,
 }
 
 impl UiState {
@@ -103,28 +157,13 @@ impl UiState {
             .default_width(1280)
             .default_height(800)
             .build();
+        install_app_chrome_css();
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.set_margin_top(8);
         root.set_margin_bottom(8);
         root.set_margin_start(8);
         root.set_margin_end(8);
-
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let new_button = gtk::Button::with_label("New");
-        let open_button = gtk::Button::with_label("Open");
-        let open_recent_button = gtk::Button::with_label("Open Recent");
-        let export_png_button = gtk::Button::with_label("Export PNG");
-        let save_button = gtk::Button::with_label("Save");
-        let save_as_button = gtk::Button::with_label("Save As");
-        let preferences_button = gtk::Button::with_label("Preferences");
-        toolbar.append(&new_button);
-        toolbar.append(&open_button);
-        toolbar.append(&open_recent_button);
-        toolbar.append(&export_png_button);
-        toolbar.append(&save_button);
-        toolbar.append(&save_as_button);
-        toolbar.append(&preferences_button);
 
         let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         paned.set_wide_handle(true);
@@ -148,10 +187,26 @@ impl UiState {
         preview.set_hexpand(true);
         preview.set_vexpand(true);
 
+        let preview_overlay = gtk::Overlay::new();
+        preview_overlay.set_child(Some(&preview));
+
+        let menu_button = gtk::MenuButton::new();
+        menu_button.set_widget_name("floating-preview-menu");
+        menu_button.set_icon_name("open-menu-symbolic");
+        menu_button.set_tooltip_text(Some("App menu"));
+        menu_button.set_halign(gtk::Align::End);
+        menu_button.set_valign(gtk::Align::Start);
+        menu_button.set_margin_top(12);
+        menu_button.set_margin_end(12);
+        let primary_menu = build_primary_menu_model();
+        menu_button.set_menu_model(Some(&primary_menu));
+        preview_overlay.add_overlay(&menu_button);
+
         paned.set_start_child(Some(&editor_scroll));
-        paned.set_end_child(Some(&preview));
+        paned.set_end_child(Some(&preview_overlay));
 
         let status = gtk::Label::new(None);
+        status.set_widget_name("status-line");
         status.set_xalign(0.0);
         status.set_wrap(true);
 
@@ -166,7 +221,6 @@ impl UiState {
             );
         }
 
-        root.append(&toolbar);
         root.append(&paned);
         root.append(&status);
 
@@ -194,7 +248,10 @@ impl UiState {
             render_timer: RefCell::new(None),
             highlight_timer: RefCell::new(None),
             suppress_dirty_signal: Cell::new(false),
+            started: Cell::new(false),
         });
+
+        state.install_window_actions(app);
 
         {
             let ui = state.clone();
@@ -219,34 +276,6 @@ impl UiState {
                 gtk::glib::Propagation::Proceed
             });
             editor.add_controller(key_controller);
-        }
-
-        {
-            let ui = state.clone();
-            new_button.connect_clicked(move |_| {
-                ui.handle_new();
-            });
-        }
-
-        {
-            let ui = state.clone();
-            open_button.connect_clicked(move |_| {
-                ui.handle_open();
-            });
-        }
-
-        {
-            let ui = state.clone();
-            open_recent_button.connect_clicked(move |_| {
-                ui.handle_open_recent();
-            });
-        }
-
-        {
-            let ui = state.clone();
-            export_png_button.connect_clicked(move |_| {
-                ui.handle_export_png();
-            });
         }
 
         {
@@ -282,33 +311,17 @@ impl UiState {
             });
         }
 
-        {
-            let ui = state.clone();
-            save_button.connect_clicked(move |_| {
-                ui.handle_save();
-            });
-        }
-
-        {
-            let ui = state.clone();
-            save_as_button.connect_clicked(move |_| {
-                ui.handle_save_as();
-            });
-        }
-
-        {
-            let ui = state.clone();
-            preferences_button.connect_clicked(move |_| {
-                ui.handle_preferences();
-            });
-        }
-
         state.apply_editor_preferences();
 
         state
     }
 
     fn startup(&self) {
+        if self.started.replace(true) {
+            self.window.present();
+            return;
+        }
+
         let mut startup_errors = Vec::new();
 
         if let Err(err) = ensure_mermaid_bundle_exists() {
@@ -331,6 +344,93 @@ impl UiState {
         self.schedule_highlight();
         self.update_title();
         self.window.present();
+    }
+
+    fn handle_open_files(&self, files: &[gtk::gio::File]) {
+        let Some(path) = first_openable_path(files) else {
+            return;
+        };
+
+        if !self.confirm_discard_if_needed() {
+            self.window.present();
+            return;
+        }
+
+        self.open_document(&path);
+        self.window.present();
+    }
+
+    fn install_window_actions(self: &Rc<Self>, app: &Application) {
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("new", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_new();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("open", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_open();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("open-recent", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_open_recent();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("save", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_save();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("save-as", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_save_as();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("export-png", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_export_png();
+            });
+            self.window.add_action(&action);
+        }
+
+        {
+            let ui = self.clone();
+            let action = gtk::gio::SimpleAction::new("preferences", None);
+            action.connect_activate(move |_, _| {
+                ui.handle_preferences();
+            });
+            self.window.add_action(&action);
+        }
+
+        app.set_accels_for_action("win.new", &["<Primary>n"]);
+        app.set_accels_for_action("win.open", &["<Primary>o"]);
+        app.set_accels_for_action("win.open-recent", &["<Primary><Shift>o"]);
+        app.set_accels_for_action("win.save", &["<Primary>s"]);
+        app.set_accels_for_action("win.save-as", &["<Primary><Shift>s"]);
+        app.set_accels_for_action("win.export-png", &["<Primary><Shift>e"]);
+        app.set_accels_for_action("win.preferences", &["<Primary>comma"]);
     }
 
     fn on_buffer_changed(&self) {
@@ -846,6 +946,45 @@ impl UiState {
 fn recent_files_path() -> Result<PathBuf, String> {
     let config_root = config_root()?;
     Ok(config_root.join("dia").join("recent-files.json"))
+}
+
+fn first_openable_path(files: &[gtk::gio::File]) -> Option<PathBuf> {
+    files.iter().find_map(gtk::gio::File::path)
+}
+
+fn build_primary_menu_model() -> gtk::gio::Menu {
+    let root = gtk::gio::Menu::new();
+
+    let open_section = gtk::gio::Menu::new();
+    open_section.append(Some("New diagram"), Some("win.new"));
+    open_section.append(Some("Open..."), Some("win.open"));
+    open_section.append(Some("Open recent..."), Some("win.open-recent"));
+    root.append_section(None, &open_section);
+
+    let save_section = gtk::gio::Menu::new();
+    save_section.append(Some("Save"), Some("win.save"));
+    save_section.append(Some("Save as..."), Some("win.save-as"));
+    save_section.append(Some("Export PNG"), Some("win.export-png"));
+    root.append_section(None, &save_section);
+
+    let settings_section = gtk::gio::Menu::new();
+    settings_section.append(Some("Preferences"), Some("win.preferences"));
+    root.append_section(None, &settings_section);
+
+    root
+}
+
+fn install_app_chrome_css() {
+    let css_provider = gtk::CssProvider::new();
+    css_provider.load_from_data(APP_CHROME_CSS);
+
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &css_provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
 }
 
 fn preferences_path() -> Result<PathBuf, String> {
@@ -1548,19 +1687,15 @@ fn html_escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn build_ui(app: &Application) {
-    let ui = UiState::new(app);
-    ui.startup();
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        build_editor_css, diagram_html, preview_theme_for_id, should_handle_auto_indent,
-        MermaidThemeInfo, PreviewTheme,
+        build_editor_css, diagram_html, first_openable_path, preview_theme_for_id,
+        should_handle_auto_indent, MermaidThemeInfo, PreviewTheme,
     };
     use dia_core::DiaCore;
     use gtk4 as gtk;
+    use std::path::PathBuf;
 
     #[test]
     fn handles_return_without_modifier() {
@@ -1638,5 +1773,30 @@ mod tests {
         assert!(css.contains("textview#diagram-editor"));
         assert!(css.contains("font-family: \"JetBrains Mono\";"));
         assert!(css.contains("font-size: 18pt;"));
+    }
+
+    #[test]
+    fn first_openable_path_prefers_first_local_file() {
+        let files = vec![
+            gtk::gio::File::for_uri("https://example.com/demo.mmd"),
+            gtk::gio::File::for_path("/tmp/diagram.mmd"),
+            gtk::gio::File::for_path("/tmp/second.mmd"),
+        ];
+
+        let path = first_openable_path(&files);
+
+        assert_eq!(path, Some(PathBuf::from("/tmp/diagram.mmd")));
+    }
+
+    #[test]
+    fn first_openable_path_returns_none_for_remote_only_files() {
+        let files = vec![
+            gtk::gio::File::for_uri("https://example.com/demo.mmd"),
+            gtk::gio::File::for_uri("sftp://example.com/diagram.mmd"),
+        ];
+
+        let path = first_openable_path(&files);
+
+        assert_eq!(path, None);
     }
 }

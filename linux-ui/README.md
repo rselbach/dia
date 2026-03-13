@@ -15,6 +15,8 @@ crate on presentation and user interaction.
 - Open / Open Recent / Save / Save As / Export PNG / Right-click Copy as PNG
 - Dirty-state title updates
 - Recent-file persistence through `dia_core`
+- Desktop integration metadata (`.desktop`, icon theme assets, AppStream metainfo)
+- Mermaid file association for `.mmd` and `.mermaid`
 
 ## System Dependencies
 
@@ -34,5 +36,7 @@ cargo run
 
 - Mermaid is vendored locally at `vendor/mermaid.min.js`, so preview rendering
   works offline.
+- Linux packaging installs `com.rselbach.dia.desktop` and MIME metadata so
+  Mermaid files can be opened directly in dia from desktop file managers.
 - This crate is intentionally Linux-focused; macOS UI work will live in a
   separate native frontend.

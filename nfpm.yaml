@@ -9,10 +9,10 @@ license: MIT
 contents:
   - src: __STAGING_DIR__/dia
     dst: /usr/bin/dia
-  - src: __STAGING_DIR__/dia.desktop
-    dst: /usr/share/applications/dia.desktop
-  - src: __STAGING_DIR__/com.github.rselbach.dia.metainfo.xml
-    dst: /usr/share/metainfo/com.github.rselbach.dia.metainfo.xml
+  - src: __STAGING_DIR__/com.rselbach.dia.desktop
+    dst: /usr/share/applications/com.rselbach.dia.desktop
+  - src: __STAGING_DIR__/com.rselbach.dia.metainfo.xml
+    dst: /usr/share/metainfo/com.rselbach.dia.metainfo.xml
   - src: __STAGING_DIR__/x-mermaid.xml
     dst: /usr/share/mime/packages/x-mermaid.xml
   - src: __STAGING_DIR__/vendor/mermaid.min.js
