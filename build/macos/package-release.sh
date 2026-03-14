@@ -14,7 +14,7 @@ readonly APP_BUNDLE_NAME="${APP_NAME}.app"
 readonly FRAMEWORKS_DIR_NAME="Frameworks"
 readonly RESOURCES_DIR_NAME="Resources"
 readonly MACOS_DIR_NAME="MacOS"
-readonly ICON_SOURCE_PATH="${REPO_ROOT}/build/bin/dia.app/Contents/Resources/iconfile.icns"
+readonly ICON_ASSETS_DIR="${REPO_ROOT}/build/linux"
 readonly INFO_TEMPLATE_PATH="${SCRIPT_DIR}/Info.plist.template"
 readonly ENTITLEMENTS_PATH="${SCRIPT_DIR}/Dia.entitlements"
 readonly RUNTIME_DYLIB_NAME="libdia_core.dylib"
@@ -132,6 +132,44 @@ write_info_plist() {
   plutil -lint "${destination}" >/dev/null
 }
 
+build_icon_file() {
+  local destination="${1}"
+  local iconset_dir="${WORK_DIR}/Dia.iconset"
+
+  require_file "${ICON_ASSETS_DIR}/icon-16x16.png"
+  require_file "${ICON_ASSETS_DIR}/icon-32x32.png"
+  require_file "${ICON_ASSETS_DIR}/icon-64x64.png"
+  require_file "${ICON_ASSETS_DIR}/icon-128x128.png"
+  require_file "${ICON_ASSETS_DIR}/icon-256x256.png"
+  require_file "${ICON_ASSETS_DIR}/icon-512x512.png"
+
+  rm -rf "${iconset_dir}"
+  mkdir -p "${iconset_dir}"
+
+  install -m644 "${ICON_ASSETS_DIR}/icon-16x16.png" \
+    "${iconset_dir}/icon_16x16.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-32x32.png" \
+    "${iconset_dir}/icon_16x16@2x.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-32x32.png" \
+    "${iconset_dir}/icon_32x32.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-64x64.png" \
+    "${iconset_dir}/icon_32x32@2x.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-128x128.png" \
+    "${iconset_dir}/icon_128x128.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-256x256.png" \
+    "${iconset_dir}/icon_128x128@2x.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-256x256.png" \
+    "${iconset_dir}/icon_256x256.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-512x512.png" \
+    "${iconset_dir}/icon_256x256@2x.png"
+  install -m644 "${ICON_ASSETS_DIR}/icon-512x512.png" \
+    "${iconset_dir}/icon_512x512.png"
+  sips -z 1024 1024 "${ICON_ASSETS_DIR}/icon-512x512.png" \
+    --out "${iconset_dir}/icon_512x512@2x.png" >/dev/null
+
+  iconutil -c icns "${iconset_dir}" -o "${destination}"
+}
+
 linked_core_install_name() {
   local executable_path="${1}"
 
@@ -156,7 +194,7 @@ build_app_bundle() {
 
   install -m755 "${APP_BINARY_PATH}" "${macos_dir}/${APP_NAME}"
   install -m755 "${CORE_DYLIB_PATH}" "${bundled_dylib_path}"
-  install -m644 "${ICON_SOURCE_PATH}" "${resources_dir}/iconfile.icns"
+  build_icon_file "${resources_dir}/iconfile.icns"
   write_info_plist "${contents_dir}/Info.plist"
 
   install_name_tool -id "@rpath/${RUNTIME_DYLIB_NAME}" "${bundled_dylib_path}"
@@ -311,7 +349,6 @@ main() {
 
   require_file "${APP_BINARY_PATH}"
   require_file "${CORE_DYLIB_PATH}"
-  require_file "${ICON_SOURCE_PATH}"
   require_file "${INFO_TEMPLATE_PATH}"
   require_file "${ENTITLEMENTS_PATH}"
 
