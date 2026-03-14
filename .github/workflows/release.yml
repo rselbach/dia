@@ -82,9 +82,87 @@ jobs:
           name: linux-release-artifacts
           path: dist/*
 
+  macos:
+    name: Build macOS Release Artifact
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Import Apple signing certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/apple-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 -D -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+      - name: Resolve Developer ID identity
+        id: signing_identity
+        run: |
+          SIGN_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | head -n 1 | sed -E 's/.*"(.*)"/\1/')"
+          if [[ -z "$SIGN_IDENTITY" ]]; then
+            printf 'failed to find a Developer ID Application identity\n' >&2
+            exit 1
+          fi
+          printf 'sign_identity=%s\n' "$SIGN_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: |
+          cargo test --manifest-path syntax/Cargo.toml
+          cargo test --manifest-path core/Cargo.toml
+
+      - name: Build and package macOS release artifact
+        env:
+          SIGN_IDENTITY: ${{ steps.signing_identity.outputs.sign_identity }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cargo build --release --manifest-path core/Cargo.toml
+          swift build -c release --package-path macos-ui
+          bash build/macos/package-release.sh \
+            --version "${GITHUB_REF_NAME#v}" \
+            --sign-identity "$SIGN_IDENTITY" \
+            --apple-id "$APPLE_ID" \
+            --apple-id-password "$APPLE_ID_PASSWORD" \
+            --apple-team-id "$APPLE_TEAM_ID" \
+            --output-dir dist
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-artifacts
+          path: dist/*
+
   release:
     name: Publish GitHub Release
-    needs: linux
+    needs:
+      - linux
+      - macos
     runs-on: ubuntu-latest
 
     steps:

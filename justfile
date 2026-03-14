@@ -55,6 +55,10 @@ package-linux version: build-linux
 build-macos: build-core-release
     swift build -c release --package-path macos-ui
 
+# Package macOS release artifacts
+package-macos version: build-macos
+    bash build/macos/package-release.sh --version {{version}}
+
 # Run macOS UI
 run-macos: build-core-release
     swift run -c release --package-path macos-ui
