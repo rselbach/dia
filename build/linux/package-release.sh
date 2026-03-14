@@ -3,8 +3,11 @@
 
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+readonly REPO_ROOT
 readonly APP_NAME="dia"
 readonly DESKTOP_FILE_NAME="com.rselbach.dia.desktop"
 readonly METAINFO_FILE_NAME="com.rselbach.dia.metainfo.xml"
@@ -94,6 +97,7 @@ package_native_packages() {
   local staging_dir="${1}"
   local deb_file="${2}"
   local rpm_file="${3}"
+  local archlinux_file="${4}"
   local config_file="${OUTPUT_DIR}/nfpm.generated.yaml"
 
   python -c 'import pathlib, sys; template = pathlib.Path(sys.argv[1]).read_text(); template = template.replace("__VERSION__", sys.argv[2]).replace("__STAGING_DIR__", sys.argv[3]); pathlib.Path(sys.argv[4]).write_text(template)' \
@@ -109,6 +113,10 @@ package_native_packages() {
   nfpm pkg --config "${config_file}" \
     --packager rpm \
     --target "${rpm_file}"
+
+  nfpm pkg --config "${config_file}" \
+    --packager archlinux \
+    --target "${archlinux_file}"
 
   rm -f "${config_file}"
 }
@@ -269,14 +277,17 @@ main() {
   local tarball_file="${OUTPUT_DIR}/${staging_name}.tar.gz"
   local deb_file="${OUTPUT_DIR}/dia_${VERSION}_amd64.deb"
   local rpm_file="${OUTPUT_DIR}/dia_${VERSION}_x86_64.rpm"
+  local archlinux_file="${OUTPUT_DIR}/dia-${VERSION}-1-x86_64.pkg.tar.zst"
   local appimage_file="${OUTPUT_DIR}/${staging_name}.AppImage"
 
   rm -rf "${staging_dir}" "${OUTPUT_DIR}/AppDir"
-  rm -f "${tarball_file}" "${deb_file}" "${rpm_file}" "${appimage_file}"
+  rm -f "${tarball_file}" "${deb_file}" "${rpm_file}" \
+    "${archlinux_file}" "${appimage_file}"
 
   copy_common_payload "${staging_dir}"
   create_tarball "${staging_dir}" "${tarball_file}"
-  package_native_packages "${staging_dir}" "${deb_file}" "${rpm_file}"
+  package_native_packages "${staging_dir}" "${deb_file}" "${rpm_file}" \
+    "${archlinux_file}"
   build_appimage "${OUTPUT_DIR}" "${appimage_file}"
 }
 
