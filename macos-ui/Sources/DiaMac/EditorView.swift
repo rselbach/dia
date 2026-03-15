@@ -1,7 +1,6 @@
 import AppKit
+import DiaKit
 import SwiftUI
-
-private let syntaxCore = DiaCoreBridge()
 
 private enum EditorTheme {
     private struct Palette {
@@ -147,8 +146,6 @@ struct CodeEditorView: NSViewRepresentable {
         }
 
         let contentSize = scrollView.contentSize
-
-        fputs("[editor] configured textViewClass=\(String(describing: type(of: textView))) scrollViewClass=\(String(describing: type(of: scrollView))) contentSize=\(contentSize.debugDescription)\n", stderr)
 
         textView.minSize = NSSize(width: 0, height: contentSize.height)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -300,7 +297,7 @@ struct CodeEditorView: NSViewRepresentable {
             let location = min(selectedRange.location, content.length)
             let lineRange = content.lineRange(for: NSRange(location: location, length: 0))
             let line = content.substring(with: lineRange)
-            let insertion = (try? syntaxCore.autoIndentInsertion(prefix: line)) ?? "\n"
+            let insertion = MermaidSyntax.autoIndentInsertion(for: line)
             textView.insertText(insertion, replacementRange: selectedRange)
             return true
         }
@@ -478,24 +475,21 @@ private enum MermaidHighlighter {
         textStorage.beginEditing()
         textStorage.setAttributes(baseAttributes(font: font), range: fullRange)
 
-        let spans = (try? syntaxCore.mermaidHighlightSpans(source: string)) ?? []
+        let spans = MermaidSyntax.highlightSpans(in: string)
         for span in spans {
-            let range = NSRange(
-                location: utf16Offset(in: string, charIndex: span.start),
-                length: utf16Offset(in: string, charIndex: span.end) - utf16Offset(in: string, charIndex: span.start)
-            )
+            let start = utf16Offset(in: string, scalarIndex: span.start)
+            let end = utf16Offset(in: string, scalarIndex: span.end)
+            let range = NSRange(location: start, length: end - start)
             let color: NSColor
             switch span.kind {
-            case "keyword":
+            case .keyword:
                 color = EditorTheme.keyword
-            case "operator":
+            case .operator:
                 color = EditorTheme.arrow
-            case "comment":
+            case .comment:
                 color = EditorTheme.comment
-            case "label":
+            case .label:
                 color = EditorTheme.label
-            default:
-                continue
             }
             textStorage.addAttribute(.foregroundColor, value: color, range: range)
         }
@@ -503,10 +497,14 @@ private enum MermaidHighlighter {
         textStorage.endEditing()
     }
 
-    private static func utf16Offset(in string: String, charIndex: Int) -> Int {
-        guard charIndex > 0 else { return 0 }
-        let clampedIndex = min(charIndex, string.count)
-        let index = string.index(string.startIndex, offsetBy: clampedIndex)
-        return string.utf16.distance(from: string.utf16.startIndex, to: index.samePosition(in: string.utf16) ?? string.utf16.endIndex)
+    private static func utf16Offset(in string: String, scalarIndex: Int) -> Int {
+        guard scalarIndex > 0 else { return 0 }
+        let scalars = string.unicodeScalars
+        let clampedIndex = min(scalarIndex, scalars.count)
+        let scalarPosition = scalars.index(scalars.startIndex, offsetBy: clampedIndex)
+        return string.utf16.distance(
+            from: string.utf16.startIndex,
+            to: scalarPosition.samePosition(in: string.utf16) ?? string.utf16.endIndex
+        )
     }
 }

@@ -49,7 +49,7 @@ private enum AppMetadata {
 @main
 struct DiaMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var preferences = AppPreferences()
+    @StateObject private var preferences: AppPreferences
     @StateObject private var state: AppState
 
     init() {

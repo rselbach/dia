@@ -25,21 +25,21 @@ run:
 
 # Run all tests
 test:
-    cargo test --manifest-path syntax/Cargo.toml
-    cargo test --manifest-path core/Cargo.toml
     @if [ "{{os}}" == "linux" ]; then \
-        cargo test --manifest-path linux-ui/Cargo.toml; \
+        cd linux && go test ./...; \
+    elif [ "{{os}}" == "macos" ]; then \
+        swift test --package-path macos-ui; \
     fi
 
 # --- Linux Specific ---
 
 # Build Linux UI
 build-linux:
-    cargo build --release --manifest-path linux-ui/Cargo.toml
+    cd linux && go build -o ../dist/dia .
 
 # Run Linux UI
 run-linux:
-    cargo run --release --manifest-path linux-ui/Cargo.toml
+    cd linux && go run .
 
 # Package Linux release artifacts (requires nfpm and linuxdeploy)
 package-linux version: build-linux
@@ -52,7 +52,7 @@ package-linux version: build-linux
 # --- macOS Specific ---
 
 # Build macOS UI
-build-macos: build-core-release
+build-macos:
     swift build -c release --package-path macos-ui
 
 # Package macOS release artifacts
@@ -60,12 +60,8 @@ package-macos version: build-macos
     bash build/macos/package-release.sh --version {{version}}
 
 # Run macOS UI
-run-macos: build-core-release
+run-macos:
     swift run -c release --package-path macos-ui
-
-# Build Rust core for macOS FFI
-build-core-release:
-    cargo build --release --manifest-path core/Cargo.toml
 
 # --- Release ---
 
@@ -90,8 +86,5 @@ release:
 
 # Clean build artifacts
 clean:
-    cargo clean --manifest-path syntax/Cargo.toml
-    cargo clean --manifest-path core/Cargo.toml
-    cargo clean --manifest-path linux-ui/Cargo.toml
     rm -rf macos-ui/.build
     rm -rf dist/

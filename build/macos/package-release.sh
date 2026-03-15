@@ -11,17 +11,14 @@ readonly REPO_ROOT
 
 readonly APP_NAME="Dia"
 readonly APP_BUNDLE_NAME="${APP_NAME}.app"
-readonly FRAMEWORKS_DIR_NAME="Frameworks"
 readonly RESOURCES_DIR_NAME="Resources"
 readonly MACOS_DIR_NAME="MacOS"
 readonly ICON_ASSETS_DIR="${REPO_ROOT}/build/linux"
 readonly INFO_TEMPLATE_PATH="${SCRIPT_DIR}/Info.plist.template"
 readonly ENTITLEMENTS_PATH="${SCRIPT_DIR}/Dia.entitlements"
-readonly RUNTIME_DYLIB_NAME="libdia_core.dylib"
 
 VERSION=""
 APP_BINARY_PATH=""
-CORE_DYLIB_PATH="${REPO_ROOT}/core/target/release/${RUNTIME_DYLIB_NAME}"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 SIGN_IDENTITY=""
 APPLE_ID=""
@@ -35,7 +32,6 @@ Usage: package-release.sh --version <version> [options]
 
 Options:
   --app-binary <path>         Path to the built macOS executable
-  --core-dylib <path>         Path to libdia_core.dylib
   --output-dir <path>         Directory where release artifacts are written
   --sign-identity <identity>  Developer ID Application identity for codesign
   --apple-id <value>          Apple ID for notarization
@@ -170,49 +166,18 @@ build_icon_file() {
   iconutil -c icns "${iconset_dir}" -o "${destination}"
 }
 
-linked_core_install_name() {
-  local executable_path="${1}"
-
-  python3 -c '
-import subprocess, sys
-output = subprocess.check_output(["otool", "-L", sys.argv[1]], text=True)
-lines = output.splitlines()[1:]
-matches = [line.strip().split(" ", 1)[0] for line in lines if "libdia_core.dylib" in line]
-unique = list(dict.fromkeys(matches))
-if len(unique) == 0:
-    raise SystemExit("no libdia_core.dylib dependency found")
-if len(unique) > 1:
-    raise SystemExit(f"conflicting libdia_core.dylib install names across arch slices: {unique}")
-print(unique[0])' \
-    "${executable_path}"
-}
-
 build_app_bundle() {
   local work_dir="${1}"
   local app_bundle_path="${work_dir}/${APP_BUNDLE_NAME}"
   local contents_dir="${app_bundle_path}/Contents"
   local macos_dir="${contents_dir}/${MACOS_DIR_NAME}"
-  local frameworks_dir="${contents_dir}/${FRAMEWORKS_DIR_NAME}"
   local resources_dir="${contents_dir}/${RESOURCES_DIR_NAME}"
-  local bundled_dylib_path="${frameworks_dir}/${RUNTIME_DYLIB_NAME}"
-  local current_install_name
 
-  mkdir -p "${macos_dir}" "${frameworks_dir}" "${resources_dir}"
+  mkdir -p "${macos_dir}" "${resources_dir}"
 
   install -m755 "${APP_BINARY_PATH}" "${macos_dir}/${APP_NAME}"
-  install -m755 "${CORE_DYLIB_PATH}" "${bundled_dylib_path}"
   build_icon_file "${resources_dir}/iconfile.icns"
   write_info_plist "${contents_dir}/Info.plist"
-
-  install_name_tool -id "@rpath/${RUNTIME_DYLIB_NAME}" "${bundled_dylib_path}"
-  current_install_name="$(linked_core_install_name "${macos_dir}/${APP_NAME}")"
-  if [[ "${current_install_name}" != "@rpath/${RUNTIME_DYLIB_NAME}" ]]; then
-    install_name_tool -change "${current_install_name}" \
-      "@rpath/${RUNTIME_DYLIB_NAME}" \
-      "${macos_dir}/${APP_NAME}"
-  fi
-  install_name_tool -add_rpath "@executable_path/../${FRAMEWORKS_DIR_NAME}" \
-    "${macos_dir}/${APP_NAME}"
 
   printf '%s\n' "${app_bundle_path}"
 }
@@ -221,13 +186,11 @@ sign_app_bundle() {
   local app_bundle_path="${1}"
   local contents_dir="${app_bundle_path}/Contents"
   local executable_path="${contents_dir}/${MACOS_DIR_NAME}/${APP_NAME}"
-  local dylib_path="${contents_dir}/${FRAMEWORKS_DIR_NAME}/${RUNTIME_DYLIB_NAME}"
 
   if [[ -z "${SIGN_IDENTITY}" ]]; then
     return
   fi
 
-  codesign --force --timestamp --sign "${SIGN_IDENTITY}" "${dylib_path}"
   codesign --force --timestamp --options runtime \
     --entitlements "${ENTITLEMENTS_PATH}" \
     --sign "${SIGN_IDENTITY}" \
@@ -291,10 +254,6 @@ parse_args() {
         ;;
       --app-binary)
         APP_BINARY_PATH="${2}"
-        shift 2
-        ;;
-      --core-dylib)
-        CORE_DYLIB_PATH="${2}"
         shift 2
         ;;
       --output-dir)
@@ -373,12 +332,10 @@ main() {
   fi
 
   APP_BINARY_PATH="$(resolve_file_path "${APP_BINARY_PATH}")"
-  CORE_DYLIB_PATH="$(resolve_file_path "${CORE_DYLIB_PATH}")"
   OUTPUT_DIR="$(resolve_dir_path "${OUTPUT_DIR}")"
   require_full_notarization_config
 
   require_file "${APP_BINARY_PATH}"
-  require_file "${CORE_DYLIB_PATH}"
   require_file "${INFO_TEMPLATE_PATH}"
   require_file "${ENTITLEMENTS_PATH}"
 

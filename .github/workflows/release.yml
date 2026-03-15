@@ -20,9 +20,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -58,13 +55,10 @@ jobs:
           chmod +x "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-gtk"
 
       - name: Run tests
-        run: |
-          cargo test --manifest-path syntax/Cargo.toml
-          cargo test --manifest-path core/Cargo.toml
-          cargo test --manifest-path linux-ui/Cargo.toml
+        run: cd linux && go test ./core/... ./theme/... ./syntax/... ./preferences/...
 
       - name: Build Linux UI release binary
-        run: cargo build --release --manifest-path linux-ui/Cargo.toml
+        run: cd linux && go build -o dia .
 
       - name: Package Linux release artifacts
         env:
@@ -73,7 +67,7 @@ jobs:
           export PATH="$RUNNER_TEMP/linuxdeploy:$PATH"
           bash build/linux/package-release.sh \
             --version "${GITHUB_REF_NAME#v}" \
-            --binary "linux-ui/target/release/dia_linux_ui" \
+            --binary "linux/dia" \
             --output-dir "dist"
 
       - name: Upload Linux artifacts
@@ -89,11 +83,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Import Apple signing certificate
         env:
@@ -133,9 +122,7 @@ jobs:
           printf 'sign_identity=%s\n' "$SIGN_IDENTITY" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
-        run: |
-          cargo test --manifest-path syntax/Cargo.toml
-          cargo test --manifest-path core/Cargo.toml
+        run: swift test --package-path macos-ui
 
       - name: Build and package macOS release artifact
         env:
@@ -144,14 +131,6 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          cargo build --release --manifest-path core/Cargo.toml --target aarch64-apple-darwin
-          cargo build --release --manifest-path core/Cargo.toml --target x86_64-apple-darwin
-          mkdir -p core/target/release
-          lipo -create \
-            core/target/aarch64-apple-darwin/release/libdia_core.dylib \
-            core/target/x86_64-apple-darwin/release/libdia_core.dylib \
-            -output core/target/release/libdia_core.dylib
-          install_name_tool -id "@rpath/libdia_core.dylib" core/target/release/libdia_core.dylib
           swift build -c release --package-path macos-ui --arch arm64 --arch x86_64
           bash build/macos/package-release.sh \
             --version "${GITHUB_REF_NAME#v}" \

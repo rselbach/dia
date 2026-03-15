@@ -1,8 +1,12 @@
 import AppKit
 import Combine
+import DiaKit
 import Foundation
+import os
 import UniformTypeIdentifiers
 import WebKit
+
+private let logger = Logger(subsystem: "com.rselbach.dia", category: "AppState")
 
 // MARK: - Application State
 
@@ -11,13 +15,7 @@ final class AppState: ObservableObject {
     @Published var source: String {
         didSet {
             guard !suppressDirtySignal else { return }
-
-            do {
-                try core.setDirty(true)
-            } catch {
-                setError("failed to mark document dirty: \(error.localizedDescription)")
-            }
-
+            core.setDirty(true)
             updateWindowTitle()
             schedulePreviewRender()
         }
@@ -45,8 +43,8 @@ final class AppState: ObservableObject {
     let preferences: AppPreferences
     let themes: [MermaidThemeInfo]
 
-    private let core: DiaCoreBridge
-    private let recentFilesPath: String
+    private let core: DiaCore
+    private let recentFilesURL: URL
 
     private var didStartup = false
     private var suppressDirtySignal = false
@@ -55,23 +53,22 @@ final class AppState: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private let defaultSource: String
 
-    init(core: DiaCoreBridge = DiaCoreBridge(), preferences: AppPreferences? = nil) {
+    init(core: DiaCore = DiaCore(), preferences: AppPreferences? = nil) {
         self.core = core
         let resolvedPreferences = preferences ?? AppPreferences()
         self.preferences = resolvedPreferences
-        themes = (try? core.mermaidThemeCatalog()) ?? []
-        defaultSource = (try? core.defaultDocumentContent()) ?? ""
+        themes = MermaidThemeCatalog.themes
+        defaultSource = DiaCore.defaultDocumentContent
         source = defaultSource
-        let initialThemeID = (try? core.normalizeThemeID(resolvedPreferences.defaultThemeID)) ?? "default"
+        let initialThemeID = MermaidThemeCatalog.normalizeThemeID(resolvedPreferences.defaultThemeID)
         selectedThemeID = initialThemeID
         previewHTML = Self.diagramHTML(
             for: defaultSource,
             theme: themes.first(where: { $0.id == initialThemeID })
                 ?? MermaidThemeInfo(id: "default", label: "Default", previewBackground: "#ffffff", errorColor: "#b91c1c"),
-            mermaidConfigJS: (try? core.mermaidConfigJS(themeID: initialThemeID))
-                ?? "{ startOnLoad: false, securityLevel: \"strict\", theme: \"default\" }"
+            mermaidConfigJS: MermaidThemeCatalog.mermaidConfigJS(for: initialThemeID)
         )
-        recentFilesPath = Self.makeRecentFilesPath()
+        recentFilesURL = Self.makeRecentFilesURL()
 
         resolvedPreferences.$defaultThemeID
             .removeDuplicates()
@@ -91,8 +88,8 @@ final class AppState: ObservableObject {
         didStartup = true
 
         do {
-            try core.loadRecentFiles(path: recentFilesPath)
-            recentFiles = try core.recentFiles()
+            try core.loadRecentFiles(from: recentFilesURL)
+            recentFiles = core.recentFilePaths()
         } catch {
             setError("failed to load recent files: \(error.localizedDescription)")
         }
@@ -126,14 +123,7 @@ final class AppState: ObservableObject {
 
     func newDocument() {
         guard confirmDiscardIfNeeded() else { return }
-
-        do {
-            try core.newDocument()
-        } catch {
-            setError("new document failed: \(error.localizedDescription)")
-            return
-        }
-
+        core.newDocument()
         setLoadedSource(defaultSource)
         clearStatus()
         updateWindowTitle()
@@ -183,7 +173,7 @@ final class AppState: ObservableObject {
 
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
-        let finalDestination = URL(fileURLWithPath: ensuredExportPath(for: destination.path))
+        let finalDestination = URL(fileURLWithPath: DiaCore.ensureExportExtension(destination.path))
 
         snapshotPreviewPNG(from: webView) { [weak self] result in
             DispatchQueue.main.async {
@@ -209,7 +199,7 @@ final class AppState: ObservableObject {
     }
 
     func confirmBeforeQuit() -> Bool {
-        guard core.isDirty() else { return true }
+        guard core.dirty else { return true }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -239,7 +229,7 @@ final class AppState: ObservableObject {
 
     private func openDocument(path: String) {
         do {
-            let content = try core.openFile(path: path)
+            let content = try core.openFile(at: URL(fileURLWithPath: path))
             setLoadedSource(content)
             try persistAndReloadRecentFiles()
             clearStatus()
@@ -251,7 +241,7 @@ final class AppState: ObservableObject {
 
     private func saveDocumentInternal(showStatusOnSuccess: Bool) -> Bool {
         do {
-            if try core.currentFile() == nil {
+            guard core.currentFile != nil else {
                 return saveDocumentAsInternal(showStatusOnSuccess: showStatusOnSuccess)
             }
 
@@ -275,10 +265,10 @@ final class AppState: ObservableObject {
 
         guard panel.runModal() == .OK, let destination = panel.url else { return false }
 
-        let finalDestination = ensuredDocumentPath(for: destination.path)
+        let finalDestination = URL(fileURLWithPath: DiaCore.ensureDocumentExtension(destination.path))
 
         do {
-            _ = try core.saveAs(path: finalDestination, content: source)
+            _ = try core.saveAs(to: finalDestination, content: source)
             try persistAndReloadRecentFiles()
             if showStatusOnSuccess { clearStatus() }
             updateWindowTitle()
@@ -297,12 +287,12 @@ final class AppState: ObservableObject {
     }
 
     private func persistAndReloadRecentFiles() throws {
-        try core.saveRecentFiles(path: recentFilesPath)
-        recentFiles = try core.recentFiles()
+        try core.saveRecentFiles(to: recentFilesURL)
+        recentFiles = core.recentFilePaths()
     }
 
     private func confirmDiscardIfNeeded() -> Bool {
-        guard core.isDirty() else { return true }
+        guard core.dirty else { return true }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -315,17 +305,16 @@ final class AppState: ObservableObject {
     }
 
     private func suggestedDocumentName() -> String {
-        (try? core.suggestedDocumentName()) ?? "diagram.mmd"
+        core.suggestedDocumentName()
     }
 
     private func suggestedExportName() -> String {
-        (try? core.suggestedExportName()) ?? "diagram.png"
+        core.suggestedExportName()
     }
 
     private func updateWindowTitle() {
-        let name = (try? core.displayName()) ?? "Untitled"
-
-        let isDirty = core.isDirty()
+        let name = core.displayName()
+        let isDirty = core.dirty
 
         DispatchQueue.main.async {
             for window in NSApplication.shared.windows {
@@ -359,21 +348,12 @@ final class AppState: ObservableObject {
         statusMessage = ""
     }
 
-    private func ensuredDocumentPath(for path: String) -> String {
-        (try? core.ensureDocumentExtension(path: path)) ?? path
-    }
-
-    private func ensuredExportPath(for path: String) -> String {
-        (try? core.ensureExportExtension(path: path)) ?? path
-    }
-
     private func normalizedThemeID(_ themeID: String) -> String {
-        (try? core.normalizeThemeID(themeID)) ?? "default"
+        MermaidThemeCatalog.normalizeThemeID(themeID)
     }
 
     private func mermaidConfigJS(for themeID: String) -> String {
-        (try? core.mermaidConfigJS(themeID: themeID))
-            ?? "{ startOnLoad: false, securityLevel: \"strict\", theme: \"default\" }"
+        MermaidThemeCatalog.mermaidConfigJS(for: themeID)
     }
 
     private func themeInfo(for themeID: String) -> MermaidThemeInfo {
@@ -491,11 +471,11 @@ final class AppState: ObservableObject {
         }
     }
 
-    private static func makeRecentFilesPath() -> String {
+    private static func makeRecentFilesURL() -> URL {
         let fileManager = FileManager.default
         let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        return baseDirectory.appendingPathComponent("dia/recent-files.json").path
+        return baseDirectory.appendingPathComponent("dia/recent-files.json")
     }
 
     // MARK: - HTML Generation
@@ -774,11 +754,16 @@ final class AppState: ObservableObject {
     }
 
     private static func jsonStringLiteral(_ value: String) -> String {
-        guard let encoded = try? JSONEncoder().encode(value),
-              let text = String(data: encoded, encoding: .utf8)
-        else {
+        do {
+            let encoded = try JSONEncoder().encode(value)
+            guard let text = String(data: encoded, encoding: .utf8) else {
+                logger.error("jsonStringLiteral: UTF-8 decode failed for encoded JSON")
+                return "\"\""
+            }
+            return text
+        } catch {
+            logger.error("jsonStringLiteral: JSON encoding failed: \(error.localizedDescription)")
             return "\"\""
         }
-        return text
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import DiaKit
 import SwiftUI
 
 struct EditorFontOption: Identifiable, Hashable {
@@ -44,14 +45,11 @@ final class AppPreferences: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let core = DiaCoreBridge()
-        themes = (try? core.mermaidThemeCatalog()) ?? []
+        themes = MermaidThemeCatalog.themes
         fontOptions = Self.loadFontOptions()
 
-        let defaultThemeIDFromCore = (try? core.defaultThemeID()) ?? "default"
-        let storedThemeID = defaults.string(forKey: Keys.defaultTheme) ?? defaultThemeIDFromCore
-        let normalizedStoredThemeID = (try? core.normalizeThemeID(storedThemeID)) ?? defaultThemeIDFromCore
-        defaultThemeID = normalizedStoredThemeID
+        let storedThemeID = defaults.string(forKey: Keys.defaultTheme) ?? MermaidThemeCatalog.defaultThemeID
+        defaultThemeID = MermaidThemeCatalog.normalizeThemeID(storedThemeID)
 
         let fallbackFontName = Self.defaultFontOption(in: fontOptions).postScriptName
         let storedFontName = defaults.string(forKey: Keys.editorFontName)

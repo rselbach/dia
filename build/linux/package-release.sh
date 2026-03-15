@@ -14,7 +14,7 @@ readonly METAINFO_FILE_NAME="com.rselbach.dia.metainfo.xml"
 readonly MERMAID_BUNDLE_NAME="mermaid.min.js"
 
 VERSION=""
-BINARY_PATH="${REPO_ROOT}/linux-ui/target/release/dia_linux_ui"
+BINARY_PATH="${REPO_ROOT}/linux/dia"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 
 usage() {
@@ -71,7 +71,7 @@ copy_common_payload() {
     "${staging_dir}/x-mermaid.xml"
   install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
     "${staging_dir}/icons/dia.svg"
-  install -Dm644 "${REPO_ROOT}/linux-ui/vendor/${MERMAID_BUNDLE_NAME}" \
+  install -Dm644 "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}" \
     "${staging_dir}/vendor/${MERMAID_BUNDLE_NAME}"
 
   local size
@@ -144,7 +144,7 @@ populate_appdir() {
     "${appdir}/usr/share/mime/packages/x-mermaid.xml"
   install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
     "${appdir}/usr/share/icons/hicolor/scalable/apps/dia.svg"
-  install -Dm644 "${REPO_ROOT}/linux-ui/vendor/${MERMAID_BUNDLE_NAME}" \
+  install -Dm644 "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}" \
     "${appdir}/usr/share/dia/vendor/${MERMAID_BUNDLE_NAME}"
 
   local size
@@ -270,7 +270,7 @@ main() {
   require_file "${REPO_ROOT}/build/linux/install.sh"
   require_file "${REPO_ROOT}/build/linux/icon.svg"
   require_file "${REPO_ROOT}/build/linux/AppRun"
-  require_file "${REPO_ROOT}/linux-ui/vendor/${MERMAID_BUNDLE_NAME}"
+  require_file "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}"
 
   local staging_name="dia-${VERSION}-linux-amd64"
   local staging_dir="${OUTPUT_DIR}/${staging_name}"

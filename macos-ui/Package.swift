@@ -9,22 +9,22 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "DiaCoreFFI",
-            path: "Sources/DiaCoreFFI",
-            publicHeadersPath: "include"
+            name: "DiaKit",
+            path: "Sources/DiaKit"
         ),
         .executableTarget(
             name: "DiaMac",
-            dependencies: [
-                "DiaCoreFFI",
-            ],
+            dependencies: ["DiaKit"],
             path: "Sources/DiaMac",
             linkerSettings: [
-                .unsafeFlags(["-L", "../core/target/release"]),
-                .linkedLibrary("dia_core"),
                 .linkedFramework("AppKit"),
                 .linkedFramework("WebKit")
             ]
+        ),
+        .testTarget(
+            name: "DiaKitTests",
+            dependencies: ["DiaKit"],
+            path: "Tests/DiaKitTests"
         )
     ]
 )
