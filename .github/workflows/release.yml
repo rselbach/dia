@@ -34,6 +34,7 @@ jobs:
             curl \
             desktop-file-utils \
             file \
+            libgirepository1.0-dev \
             libgtk-4-dev \
             libwebkitgtk-6.0-dev \
             patchelf \
