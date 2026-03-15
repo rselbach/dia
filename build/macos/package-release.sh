@@ -173,10 +173,17 @@ build_icon_file() {
 linked_core_install_name() {
   local executable_path="${1}"
 
-  python3 -c 'import subprocess, sys; output = subprocess.check_output(["otool", "-L", sys.argv[1]], text=True); lines = output.splitlines()[1:]; matches = [line.strip().split(" ", 1)[0] for line in lines if "libdia_core.dylib" in line];
-if len(matches) != 1:
-    raise SystemExit(f"expected one libdia_core.dylib dependency, found {len(matches)}")
-print(matches[0])' \
+  python3 -c '
+import subprocess, sys
+output = subprocess.check_output(["otool", "-L", sys.argv[1]], text=True)
+lines = output.splitlines()[1:]
+matches = [line.strip().split(" ", 1)[0] for line in lines if "libdia_core.dylib" in line]
+unique = list(dict.fromkeys(matches))
+if len(unique) == 0:
+    raise SystemExit("no libdia_core.dylib dependency found")
+if len(unique) > 1:
+    raise SystemExit(f"conflicting libdia_core.dylib install names across arch slices: {unique}")
+print(unique[0])' \
     "${executable_path}"
 }
 
@@ -198,10 +205,12 @@ build_app_bundle() {
   write_info_plist "${contents_dir}/Info.plist"
 
   install_name_tool -id "@rpath/${RUNTIME_DYLIB_NAME}" "${bundled_dylib_path}"
-  current_install_name="$(linked_core_install_name "${APP_BINARY_PATH}")"
-  install_name_tool -change "${current_install_name}" \
-    "@rpath/${RUNTIME_DYLIB_NAME}" \
-    "${macos_dir}/${APP_NAME}"
+  current_install_name="$(linked_core_install_name "${macos_dir}/${APP_NAME}")"
+  if [[ "${current_install_name}" != "@rpath/${RUNTIME_DYLIB_NAME}" ]]; then
+    install_name_tool -change "${current_install_name}" \
+      "@rpath/${RUNTIME_DYLIB_NAME}" \
+      "${macos_dir}/${APP_NAME}"
+  fi
   install_name_tool -add_rpath "@executable_path/../${FRAMEWORKS_DIR_NAME}" \
     "${macos_dir}/${APP_NAME}"
 

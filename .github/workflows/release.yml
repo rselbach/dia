@@ -151,7 +151,7 @@ jobs:
             core/target/aarch64-apple-darwin/release/libdia_core.dylib \
             core/target/x86_64-apple-darwin/release/libdia_core.dylib \
             -output core/target/release/libdia_core.dylib
-          install_name_tool -id "libdia_core.dylib" core/target/release/libdia_core.dylib
+          install_name_tool -id "@rpath/libdia_core.dylib" core/target/release/libdia_core.dylib
           swift build -c release --package-path macos-ui --arch arm64 --arch x86_64
           bash build/macos/package-release.sh \
             --version "${GITHUB_REF_NAME#v}" \
