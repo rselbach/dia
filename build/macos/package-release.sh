@@ -331,16 +331,21 @@ binary_arch() {
   local binary_path="${1}"
   local archs
 
-  archs="$(lipo -info "${binary_path}" 2>&1)"
-  if [[ "${archs}" == *"architecture: arm64"* && "${archs}" == *"architecture: x86_64"* ]]; then
-    printf 'universal\n'
-  elif [[ "${archs}" == *"architecture: arm64"* ]]; then
-    printf 'arm64\n'
-  elif [[ "${archs}" == *"architecture: x86_64"* ]]; then
-    printf 'x86_64\n'
-  else
-    printf 'unknown\n'
-  fi
+  archs="$(lipo -archs "${binary_path}" 2>&1)"
+  case "${archs}" in
+    *arm64*x86_64*|*x86_64*arm64*)
+      printf 'universal\n'
+      ;;
+    *arm64*)
+      printf 'arm64\n'
+      ;;
+    *x86_64*)
+      printf 'x86_64\n'
+      ;;
+    *)
+      printf 'unknown\n'
+      ;;
+  esac
 }
 
 main() {
