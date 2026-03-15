@@ -179,6 +179,7 @@ func newUIState(app *gtk.Application) *UIState {
 	}
 
 	ui.installWindowActions()
+	ui.installPreviewContextMenu()
 
 	textBuffer.ConnectChanged(func() {
 		ui.onBufferChanged()
@@ -247,8 +248,9 @@ func (ui *UIState) installWindowActions() {
 		"open-recent": ui.handleOpenRecent,
 		"save":        ui.handleSave,
 		"save-as":     ui.handleSaveAs,
-		"export-png":  ui.handleExportPNG,
-		"preferences": ui.handlePreferences,
+		"export-png":        ui.handleExportPNG,
+		"copy-preview-png":  ui.copyPreviewToClipboard,
+		"preferences":       ui.handlePreferences,
 	}
 
 	for name, handler := range actions {
@@ -265,6 +267,53 @@ func (ui *UIState) installWindowActions() {
 	ui.app.SetAccelsForAction("win.save-as", []string{"<Primary><Shift>s"})
 	ui.app.SetAccelsForAction("win.export-png", []string{"<Primary><Shift>e"})
 	ui.app.SetAccelsForAction("win.preferences", []string{"<Primary>comma"})
+}
+
+func (ui *UIState) installPreviewContextMenu() {
+	// Suppress WebKit's default context menu (back/forward/reload are
+	// meaningless here) and show our own popover instead.
+	ui.preview.ConnectContextMenu(func(_ *webkit.ContextMenu, _ *webkit.HitTestResult) bool {
+		return true
+	})
+
+	menuModel := gio.NewMenu()
+	menuModel.Append("Copy as PNG", "win.copy-preview-png")
+
+	popover := gtk.NewPopoverMenuFromModel(menuModel)
+	popover.SetParent(ui.preview)
+	popover.SetHasArrow(false)
+
+	gesture := gtk.NewGestureClick()
+	gesture.SetButton(gdk.BUTTON_SECONDARY)
+	gesture.ConnectPressed(func(_ int, x, y float64) {
+		rect := gdk.NewRectangle(int(x), int(y), 1, 1)
+		popover.SetPointingTo(&rect)
+		popover.Popup()
+	})
+	ui.preview.AddController(gesture)
+}
+
+func (ui *UIState) copyPreviewToClipboard() {
+	webViewSnapshot(
+		ui.preview,
+		webkit.SnapshotRegionVisible,
+		webkit.SnapshotOptionsNone,
+		context.Background(),
+		func(result gio.AsyncResulter) {
+			texturer, err := ui.preview.SnapshotFinish(result)
+			if err != nil {
+				ui.setError(fmt.Sprintf("copy failed: %s", err))
+				return
+			}
+			display := gdk.DisplayGetDefault()
+			if display == nil {
+				ui.setError("copy failed: no display available")
+				return
+			}
+			display.Clipboard().SetTexture(texturer)
+			ui.clearStatus()
+		},
+	)
 }
 
 func (ui *UIState) onBufferChanged() {
