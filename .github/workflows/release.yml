@@ -92,6 +92,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Import Apple signing certificate
         env:
@@ -142,10 +144,17 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          cargo build --release --manifest-path core/Cargo.toml
-          swift build -c release --package-path macos-ui
+          cargo build --release --manifest-path core/Cargo.toml --target aarch64-apple-darwin
+          cargo build --release --manifest-path core/Cargo.toml --target x86_64-apple-darwin
+          mkdir -p core/target/release
+          lipo -create \
+            core/target/aarch64-apple-darwin/release/libdia_core.dylib \
+            core/target/x86_64-apple-darwin/release/libdia_core.dylib \
+            -output core/target/release/libdia_core.dylib
+          swift build -c release --package-path macos-ui --arch arm64 --arch x86_64
           bash build/macos/package-release.sh \
             --version "${GITHUB_REF_NAME#v}" \
+            --app-binary "$PWD/macos-ui/.build/apple/Products/release/Dia" \
             --sign-identity "$SIGN_IDENTITY" \
             --apple-id "$APPLE_ID" \
             --apple-id-password "$APPLE_ID_PASSWORD" \

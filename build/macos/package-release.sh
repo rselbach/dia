@@ -327,6 +327,22 @@ parse_args() {
   fi
 }
 
+binary_arch() {
+  local binary_path="${1}"
+  local archs
+
+  archs="$(lipo -info "${binary_path}" 2>&1)"
+  if [[ "${archs}" == *"architecture: arm64"* && "${archs}" == *"architecture: x86_64"* ]]; then
+    printf 'universal\n'
+  elif [[ "${archs}" == *"architecture: arm64"* ]]; then
+    printf 'arm64\n'
+  elif [[ "${archs}" == *"architecture: x86_64"* ]]; then
+    printf 'x86_64\n'
+  else
+    printf 'unknown\n'
+  fi
+}
+
 main() {
   local arch
   local release_name
@@ -352,6 +368,7 @@ main() {
   require_file "${INFO_TEMPLATE_PATH}"
   require_file "${ENTITLEMENTS_PATH}"
 
+  arch="$(binary_arch "${APP_BINARY_PATH}")"
   release_name="dia-${VERSION}-macos-${arch}"
   dmg_path="${OUTPUT_DIR}/${release_name}.dmg"
 
