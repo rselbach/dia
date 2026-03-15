@@ -95,7 +95,6 @@ struct CodeEditorView: NSViewRepresentable {
         updateTextView(textView, with: text)
         updateFont(for: textView)
         synchronizeLayout(for: textView, in: scrollView)
-        logEditorState(textView, context: "makeNSView")
         return containerView
     }
 
@@ -115,7 +114,6 @@ struct CodeEditorView: NSViewRepresentable {
         synchronizeLayout(for: textView, in: nsView.scrollView)
         nsView.needsLayout = true
         nsView.gutterView.needsDisplay = true
-        logEditorState(textView, context: "updateNSView")
     }
 
     private func configuredScrollView() -> NSScrollView {
@@ -243,41 +241,6 @@ struct CodeEditorView: NSViewRepresentable {
         textView.needsDisplay = true
     }
 
-    private func logEditorState(_ textView: NSTextView, context: String) {
-        let frame = textView.frame
-        let bounds = textView.bounds
-        let visibleRect = textView.visibleRect
-        let containerSize = textView.textContainer?.containerSize ?? .zero
-        let containerOrigin = textView.textContainerOrigin
-        let inset = textView.textContainerInset
-        let stringCount = textView.string.count
-        let textColor = textView.textColor?.description ?? "nil"
-        let firstAttributes: String
-        if let textStorage = textView.textStorage, textStorage.length > 0 {
-            let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
-            firstAttributes = attrs.map { "\($0.key.rawValue)=\($0.value)" }.joined(separator: ",")
-        } else {
-            firstAttributes = "empty"
-        }
-
-        var glyphDebug = "no-layout"
-        if let layoutManager = textView.layoutManager,
-           let textContainer = textView.textContainer,
-           layoutManager.numberOfGlyphs > 0
-        {
-            let glyphRange = NSRange(location: 0, length: min(layoutManager.numberOfGlyphs, 16))
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            let firstLocation = layoutManager.location(forGlyphAt: 0)
-            glyphDebug = "glyphs=\(layoutManager.numberOfGlyphs) used=\(usedRect.debugDescription) firstRect=\(boundingRect.debugDescription) firstLoc=\(firstLocation.debugDescription)"
-        }
-
-        fputs(
-            "[editor] \(context) len=\(stringCount) frame=\(frame.debugDescription) bounds=\(bounds.debugDescription) visible=\(visibleRect.debugDescription) container=\(containerSize.debugDescription) origin=\(containerOrigin.debugDescription) inset=\(inset.debugDescription) color=\(textColor) attrs=\(firstAttributes) \(glyphDebug)\n",
-            stderr
-        )
-    }
-
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditorView
         var isUpdatingFromSwiftUI = false
@@ -311,7 +274,6 @@ struct CodeEditorView: NSViewRepresentable {
                 else { return }
 
                 self.parent.synchronizeLayout(for: textView, in: scrollView)
-                self.parent.logEditorState(textView, context: "boundsDidChange")
             }
         }
 
@@ -327,7 +289,6 @@ struct CodeEditorView: NSViewRepresentable {
                 parent.synchronizeLayout(for: textView, in: scrollView)
             }
             textView.enclosingScrollView?.superview?.needsDisplay = true
-            parent.logEditorState(textView, context: "textDidChange")
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

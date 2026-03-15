@@ -7,7 +7,36 @@ use std::path::{Path, PathBuf};
 use dia_syntax::{auto_indent_insertion as syntax_auto_indent_insertion, highlight_spans};
 
 const DEFAULT_MAX_RECENT_FILES: usize = 10;
-const DEFAULT_DOCUMENT_CONTENT: &str = "flowchart TD\n    A[Start] --> B{Is it working?}\n    B -->|Yes| C[Great!]\n    B -->|No| D[Debug]\n    D --> B\n";
+const DEFAULT_DOCUMENT_CONTENT: &str = "\
+sequenceDiagram
+    participant Jeff
+    participant Abed
+    participant StarBurns
+    participant Dean
+    participant StudyGroup as Study Group
+
+    Jeff->>Abed: We need chicken fingers
+    Abed->>Abed: Becomes fry cook
+    Note over Abed: Controls the supply
+    
+    Abed->>StarBurns: You handle distribution
+    StarBurns->>StudyGroup: Chicken fingers... for a price
+    StudyGroup->>StarBurns: Bribes & favors
+    StarBurns->>Abed: Reports tribute
+    
+    Jeff->>Abed: I need extra fingers for a date
+    Abed-->>Jeff: You'll wait like everyone else
+    Jeff->>Jeff: What have we created?
+    
+    Dean->>Abed: Why is everyone so happy?
+    Abed-->>Dean: Efficient cafeteria management
+    Dean->>Dean: Something's not right...
+    
+    StudyGroup->>Jeff: This has gone too far
+    Jeff->>Abed: We have to shut it down
+    Abed->>Abed: Destroys the fryer
+    Note over Abed: The empire crumbles\
+";
 const DEFAULT_DOCUMENT_NAME: &str = "diagram.mmd";
 const DEFAULT_EXPORT_NAME: &str = "diagram.png";
 const DEFAULT_THEME_ID: &str = "default";

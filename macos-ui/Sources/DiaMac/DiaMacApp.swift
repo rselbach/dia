@@ -263,11 +263,9 @@ private struct DiaCommands: Commands {
         }
 
         CommandGroup(after: .toolbar) {
-            Menu("Theme") {
-                Picker("Theme", selection: $state.selectedThemeID) {
-                    ForEach(state.themes) { theme in
-                        Text(theme.label).tag(theme.id)
-                    }
+            Picker("Theme", selection: $state.selectedThemeID) {
+                ForEach(state.themes) { theme in
+                    Text(theme.label).tag(theme.id)
                 }
             }
         }

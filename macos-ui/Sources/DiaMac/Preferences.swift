@@ -173,7 +173,7 @@ struct PreferencesView: View {
                 Text("Preview")
                     .font(.headline)
 
-                Text("flowchart TD\n    A[Greendale] --> B[Troy Barnes]")
+                Text("sequenceDiagram\n    Jeff->>Abed: We need chicken fingers")
                     .font(.custom(preferences.editorFontName, size: preferences.editorFontSize))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
