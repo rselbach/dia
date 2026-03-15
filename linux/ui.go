@@ -1,18 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/diamondburned/gotk4-webkitgtk/pkg/webkit/v6"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
-	"github.com/diamondburned/gotk4-webkitgtk/pkg/webkit/v6"
 
 	"github.com/rselbach/dia/core"
 	"github.com/rselbach/dia/preferences"
@@ -73,7 +74,7 @@ type UIState struct {
 	availableThemes []theme.ThemeInfo
 	availableFonts  []EditorFontOption
 
-	prefsThemeID string
+	prefsThemeID  string
 	prefsFontName string
 	prefsFontSize float64
 	previewTheme  *PreviewTheme
@@ -356,13 +357,13 @@ func (ui *UIState) confirmDiscardThen(proceed func()) {
 		return
 	}
 
-	alert := gtk.NewAlertDialog("Discard unsaved changes?")
+	alert := newAlertDialog("Discard unsaved changes?")
 	alert.SetDetail("Your current changes will be lost.")
 	alert.SetButtons([]string{"Cancel", "Discard"})
 	alert.SetCancelButton(0)
 	alert.SetDefaultButton(1)
 
-	alert.Choose(&ui.window.Window, nil, func(result gio.AsyncResulter) {
+	alert.Choose(context.Background(), &ui.window.Window, func(result gio.AsyncResulter) {
 		choice, err := alert.ChooseFinish(result)
 		if err != nil {
 			return
@@ -383,7 +384,7 @@ func (ui *UIState) showOpenDialog() {
 	filter.AddPattern("*.mermaid")
 	dialog.SetDefaultFilter(filter)
 
-	dialog.Open(&ui.window.Window, nil, func(result gio.AsyncResulter) {
+	dialog.Open(context.Background(), &ui.window.Window, func(result gio.AsyncResulter) {
 		file, err := dialog.OpenFinish(result)
 		if err != nil {
 			return
@@ -453,7 +454,7 @@ func (ui *UIState) showSaveDialog(suggested, content string) {
 	filter.AddPattern("*.mmd")
 	dialog.SetDefaultFilter(filter)
 
-	dialog.Save(&ui.window.Window, nil, func(result gio.AsyncResulter) {
+	dialog.Save(context.Background(), &ui.window.Window, func(result gio.AsyncResulter) {
 		file, err := dialog.SaveFinish(result)
 		if err != nil {
 			return
@@ -487,7 +488,7 @@ func (ui *UIState) showExportDialog(suggested string) {
 	filter.AddPattern("*.png")
 	dialog.SetDefaultFilter(filter)
 
-	dialog.Save(&ui.window.Window, nil, func(result gio.AsyncResulter) {
+	dialog.Save(context.Background(), &ui.window.Window, func(result gio.AsyncResulter) {
 		file, err := dialog.SaveFinish(result)
 		if err != nil {
 			return
@@ -498,18 +499,20 @@ func (ui *UIState) showExportDialog(suggested string) {
 		}
 
 		finalPath := core.EnsureExportExtension(path)
-		ui.preview.Snapshot(
+		webViewSnapshot(
+			ui.preview,
 			webkit.SnapshotRegionVisible,
 			webkit.SnapshotOptionsNone,
-			nil,
+			context.Background(),
 			func(snapResult gio.AsyncResulter) {
-				texture, err := ui.preview.SnapshotFinish(snapResult)
+				texturer, err := ui.preview.SnapshotFinish(snapResult)
 				if err != nil {
 					ui.setError(fmt.Sprintf("export failed: %s", err))
 					return
 				}
-				if err := texture.SaveToPng(finalPath); err != nil {
-					ui.setError(fmt.Sprintf("export failed: %s", err))
+				texture := gdk.BaseTexture(texturer)
+				if !texture.SaveToPNG(finalPath) {
+					ui.setError("export failed: could not save PNG")
 					return
 				}
 				ui.clearStatus()
@@ -540,8 +543,8 @@ func (ui *UIState) handleAutoIndentNewline() bool {
 	}
 
 	insertIter := ui.buffer.IterAtMark(insertMark)
-	lineStart := ui.buffer.IterAtLine(insertIter.Line())
-	if lineStart == nil {
+	lineStart, ok := ui.buffer.IterAtLine(insertIter.Line())
+	if !ok {
 		return false
 	}
 
@@ -692,7 +695,7 @@ func (ui *UIState) scheduleRender() {
 
 	ui.renderTimer = glib.TimeoutAdd(renderDebounceMs, func() {
 		html := diagramHTML(source, pt)
-		preview.LoadHTML(html, baseURI)
+		preview.LoadHtml(html, baseURI)
 	})
 }
 
@@ -1044,7 +1047,8 @@ func loadEditorFontOptions(editor *gtk.TextView) []EditorFontOption {
 	families := ctx.ListFamilies()
 
 	var monoFamilies []string
-	for _, family := range families {
+	for _, fam := range families {
+		family := pango.BaseFontFamily(fam)
 		if family.IsMonospace() {
 			monoFamilies = append(monoFamilies, family.Name())
 		}
@@ -1098,4 +1102,3 @@ func previewThemeForID(themes []theme.ThemeInfo, themeID string) *PreviewTheme {
 	}
 	return nil
 }
-
