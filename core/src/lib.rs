@@ -927,7 +927,7 @@ mod tests {
     fn shared_document_helpers_use_expected_defaults() {
         let core = DiaCore::new(10);
 
-        assert_eq!(DiaCore::default_document_content(), "flowchart TD\n    A[Start] --> B{Is it working?}\n    B -->|Yes| C[Great!]\n    B -->|No| D[Debug]\n    D --> B\n");
+        assert_eq!(DiaCore::default_document_content(), "sequenceDiagram\n    participant Jeff\n    participant Abed\n    participant StarBurns\n    participant Dean\n    participant StudyGroup as Study Group\n\n    Jeff->>Abed: We need chicken fingers\n    Abed->>Abed: Becomes fry cook\n    Note over Abed: Controls the supply\n    \n    Abed->>StarBurns: You handle distribution\n    StarBurns->>StudyGroup: Chicken fingers... for a price\n    StudyGroup->>StarBurns: Bribes & favors\n    StarBurns->>Abed: Reports tribute\n    \n    Jeff->>Abed: I need extra fingers for a date\n    Abed-->>Jeff: You'll wait like everyone else\n    Jeff->>Jeff: What have we created?\n    \n    Dean->>Abed: Why is everyone so happy?\n    Abed-->>Dean: Efficient cafeteria management\n    Dean->>Dean: Something's not right...\n    \n    StudyGroup->>Jeff: This has gone too far\n    Jeff->>Abed: We have to shut it down\n    Abed->>Abed: Destroys the fryer\n    Note over Abed: The empire crumbles");
         assert_eq!(core.display_name(), "Untitled");
         assert_eq!(core.suggested_document_name(), "diagram.mmd");
         assert_eq!(core.suggested_export_name(), "diagram.png");
