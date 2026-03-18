@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 readonly APP_NAME="dia"
 readonly DESKTOP_FILE_NAME="com.rselbach.dia.desktop"
@@ -14,7 +14,7 @@ readonly METAINFO_FILE_NAME="com.rselbach.dia.metainfo.xml"
 readonly MERMAID_BUNDLE_NAME="mermaid.min.js"
 
 VERSION=""
-BINARY_PATH="${REPO_ROOT}/linux/dia"
+BINARY_PATH="${REPO_ROOT}/dia"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 
 usage() {
@@ -60,23 +60,23 @@ copy_common_payload() {
   mkdir -p "${staging_dir}/icons" "${staging_dir}/vendor"
 
   install -Dm755 "${BINARY_PATH}" "${staging_dir}/${APP_NAME}"
-  install -Dm755 "${REPO_ROOT}/build/linux/install.sh" \
+  install -Dm755 "${REPO_ROOT}/build/install.sh" \
     "${staging_dir}/install.sh"
-  install -Dm644 "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}" \
+  install -Dm644 "${REPO_ROOT}/build/${DESKTOP_FILE_NAME}" \
     "${staging_dir}/${DESKTOP_FILE_NAME}"
   install -Dm644 \
-    "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}" \
+    "${REPO_ROOT}/build/${METAINFO_FILE_NAME}" \
     "${staging_dir}/${METAINFO_FILE_NAME}"
-  install -Dm644 "${REPO_ROOT}/build/linux/x-mermaid.xml" \
+  install -Dm644 "${REPO_ROOT}/build/x-mermaid.xml" \
     "${staging_dir}/x-mermaid.xml"
-  install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
+  install -Dm644 "${REPO_ROOT}/build/icon.svg" \
     "${staging_dir}/icons/dia.svg"
-  install -Dm644 "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}" \
+  install -Dm644 "${REPO_ROOT}/vendor-js/${MERMAID_BUNDLE_NAME}" \
     "${staging_dir}/vendor/${MERMAID_BUNDLE_NAME}"
 
   local size
   for size in 16 32 48 64 128 256 512; do
-    install -Dm644 "${REPO_ROOT}/build/linux/icon-${size}x${size}.png" \
+    install -Dm644 "${REPO_ROOT}/build/icon-${size}x${size}.png" \
       "${staging_dir}/icons/dia-${size}x${size}.png"
   done
 }
@@ -134,22 +134,22 @@ populate_appdir() {
   local webkit_dst_dir="${appdir}/usr/${libdir_rel}/webkitgtk-6.0"
 
   install -Dm755 "${BINARY_PATH}" "${appdir}/usr/bin/${APP_NAME}"
-  install -Dm755 "${REPO_ROOT}/build/linux/AppRun" "${appdir}/AppRun"
-  install -Dm644 "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}" \
+  install -Dm755 "${REPO_ROOT}/build/AppRun" "${appdir}/AppRun"
+  install -Dm644 "${REPO_ROOT}/build/${DESKTOP_FILE_NAME}" \
     "${appdir}/usr/share/applications/${DESKTOP_FILE_NAME}"
   install -Dm644 \
-    "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}" \
+    "${REPO_ROOT}/build/${METAINFO_FILE_NAME}" \
     "${appdir}/usr/share/metainfo/${METAINFO_FILE_NAME}"
-  install -Dm644 "${REPO_ROOT}/build/linux/x-mermaid.xml" \
+  install -Dm644 "${REPO_ROOT}/build/x-mermaid.xml" \
     "${appdir}/usr/share/mime/packages/x-mermaid.xml"
-  install -Dm644 "${REPO_ROOT}/build/linux/icon.svg" \
+  install -Dm644 "${REPO_ROOT}/build/icon.svg" \
     "${appdir}/usr/share/icons/hicolor/scalable/apps/dia.svg"
-  install -Dm644 "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}" \
+  install -Dm644 "${REPO_ROOT}/vendor-js/${MERMAID_BUNDLE_NAME}" \
     "${appdir}/usr/share/dia/vendor/${MERMAID_BUNDLE_NAME}"
 
   local size
   for size in 16 32 48 64 128 256 512; do
-    install -Dm644 "${REPO_ROOT}/build/linux/icon-${size}x${size}.png" \
+    install -Dm644 "${REPO_ROOT}/build/icon-${size}x${size}.png" \
       "${appdir}/usr/share/icons/hicolor/${size}x${size}/apps/dia.png"
   done
 
@@ -264,13 +264,13 @@ main() {
   OUTPUT_DIR="$(resolve_dir_path "${OUTPUT_DIR}")"
 
   require_file "${BINARY_PATH}"
-  require_file "${REPO_ROOT}/build/linux/${DESKTOP_FILE_NAME}"
-  require_file "${REPO_ROOT}/build/linux/${METAINFO_FILE_NAME}"
-  require_file "${REPO_ROOT}/build/linux/x-mermaid.xml"
-  require_file "${REPO_ROOT}/build/linux/install.sh"
-  require_file "${REPO_ROOT}/build/linux/icon.svg"
-  require_file "${REPO_ROOT}/build/linux/AppRun"
-  require_file "${REPO_ROOT}/linux/vendor-js/${MERMAID_BUNDLE_NAME}"
+  require_file "${REPO_ROOT}/build/${DESKTOP_FILE_NAME}"
+  require_file "${REPO_ROOT}/build/${METAINFO_FILE_NAME}"
+  require_file "${REPO_ROOT}/build/x-mermaid.xml"
+  require_file "${REPO_ROOT}/build/install.sh"
+  require_file "${REPO_ROOT}/build/icon.svg"
+  require_file "${REPO_ROOT}/build/AppRun"
+  require_file "${REPO_ROOT}/vendor-js/${MERMAID_BUNDLE_NAME}"
 
   local staging_name="dia-${VERSION}-linux-amd64"
   local staging_dir="${OUTPUT_DIR}/${staging_name}"

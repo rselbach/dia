@@ -1,69 +1,28 @@
 set shell := ["bash", "-uc"]
 
-# OS detection
-os := if os_family() == "windows" { "windows" } else if os_family() == "macos" { "macos" } else { "linux" }
-
 # Default recipe
 default:
     @just --list
 
-# Build the application for the current OS
+# Build the application
 build:
-    @if [ "{{os}}" == "linux" ]; then \
-        just build-linux; \
-    elif [ "{{os}}" == "macos" ]; then \
-        just build-macos; \
-    fi
+    go build -o dist/dia .
 
-# Run the application for the current OS
+# Run the application
 run:
-    @if [ "{{os}}" == "linux" ]; then \
-        just run-linux; \
-    elif [ "{{os}}" == "macos" ]; then \
-        just run-macos; \
-    fi
+    go run .
 
 # Run all tests
 test:
-    @if [ "{{os}}" == "linux" ]; then \
-        cd linux && go test ./...; \
-    elif [ "{{os}}" == "macos" ]; then \
-        swift test --package-path macos-ui; \
-    fi
+    go test ./...
 
-# --- Linux Specific ---
-
-# Build Linux UI
-build-linux:
-    cd linux && go build -o ../dist/dia .
-
-# Run Linux UI
-run-linux:
-    cd linux && go run .
-
-# Package Linux release artifacts (requires nfpm and linuxdeploy)
-package-linux version: build-linux
+# Package release artifacts (requires nfpm and linuxdeploy)
+package version: build
     @if [ -z "${LINUXDEPLOY:-}" ]; then \
         echo "Error: LINUXDEPLOY environment variable must be set to the path of the linuxdeploy AppImage"; \
         exit 1; \
     fi
-    bash build/linux/package-release.sh --version {{version}}
-
-# --- macOS Specific ---
-
-# Build macOS UI
-build-macos:
-    swift build -c release --package-path macos-ui
-
-# Package macOS release artifacts
-package-macos version: build-macos
-    bash build/macos/package-release.sh --version {{version}}
-
-# Run macOS UI
-run-macos:
-    swift run -c release --package-path macos-ui
-
-# --- Release ---
+    bash build/package-release.sh --version {{version}}
 
 # Tag a new release by bumping the patch version
 release:
@@ -82,9 +41,6 @@ release:
     git tag "${new_tag}"
     echo "Done. Push with: git push origin ${new_tag}"
 
-# --- Housekeeping ---
-
 # Clean build artifacts
 clean:
-    rm -rf macos-ui/.build
     rm -rf dist/

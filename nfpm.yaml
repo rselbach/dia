@@ -47,5 +47,5 @@ overrides:
       - gtk4
       - webkitgtk-6.0
 scripts:
-  postinstall: build/linux/postinstall.sh
-  postremove: build/linux/postremove.sh
+  postinstall: build/postinstall.sh
+  postremove: build/postremove.sh
