@@ -1,15 +1,29 @@
 set shell := ["bash", "-uc"]
 
+mermaid_version := "11.13.0"
+mermaid_url := "https://cdn.jsdelivr.net/npm/mermaid@" + mermaid_version + "/dist/mermaid.min.js"
+mermaid_path := "vendor-js/mermaid.min.js"
+
 # Default recipe
 default:
     @just --list
 
+# Download the mermaid.js bundle
+mermaid:
+    @if [ ! -f "{{mermaid_path}}" ]; then \
+        echo "Downloading mermaid {{mermaid_version}}..."; \
+        mkdir -p vendor-js; \
+        curl -fsSL -o "{{mermaid_path}}" "{{mermaid_url}}"; \
+    else \
+        echo "mermaid {{mermaid_version}} already downloaded"; \
+    fi
+
 # Build the application
-build:
+build: mermaid
     go build -o dist/dia .
 
 # Run the application
-run:
+run: mermaid
     go run .
 
 # Run all tests

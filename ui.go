@@ -243,14 +243,14 @@ func (ui *UIState) handleOpenFiles(files []gio.Filer) {
 
 func (ui *UIState) installWindowActions() {
 	actions := map[string]func(){
-		"new":         ui.handleNew,
-		"open":        ui.handleOpen,
-		"open-recent": ui.handleOpenRecent,
-		"save":        ui.handleSave,
-		"save-as":     ui.handleSaveAs,
-		"export-png":        ui.handleExportPNG,
-		"copy-preview-png":  ui.copyPreviewToClipboard,
-		"preferences":       ui.handlePreferences,
+		"new":              ui.handleNew,
+		"open":             ui.handleOpen,
+		"open-recent":      ui.handleOpenRecent,
+		"save":             ui.handleSave,
+		"save-as":          ui.handleSaveAs,
+		"export-png":       ui.handleExportPNG,
+		"copy-preview-png": ui.copyPreviewToClipboard,
+		"preferences":      ui.handlePreferences,
 	}
 
 	for name, handler := range actions {
@@ -462,13 +462,10 @@ func (ui *UIState) showRecentDialog(recentFiles []string) {
 	prompt.SetXAlign(0.0)
 	vbox.Append(prompt)
 
-	combo := gtk.NewComboBoxText()
-	combo.SetHExpand(true)
-	for _, path := range recentFiles {
-		combo.AppendText(path)
-	}
-	combo.SetActive(0)
-	vbox.Append(combo)
+	dropDown := gtk.NewDropDownFromStrings(recentFiles)
+	dropDown.SetHExpand(true)
+	dropDown.SetSelected(0)
+	vbox.Append(dropDown)
 
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	buttonBox.SetHAlign(gtk.AlignEnd)
@@ -480,10 +477,10 @@ func (ui *UIState) showRecentDialog(recentFiles []string) {
 	openBtn := gtk.NewButtonWithLabel("Open")
 	openBtn.AddCSSClass("suggested-action")
 	openBtn.ConnectClicked(func() {
-		active := combo.Active()
-		if active >= 0 && active < len(recentFiles) {
+		sel := dropDown.Selected()
+		if int(sel) < len(recentFiles) {
 			recentWin.Close()
-			ui.openDocument(recentFiles[active])
+			ui.openDocument(recentFiles[sel])
 		}
 	})
 	buttonBox.Append(openBtn)
@@ -625,12 +622,19 @@ func (ui *UIState) handlePreferences() {
 
 	fontLabel := gtk.NewLabel("Editor Font")
 	fontLabel.SetXAlign(0.0)
-	fontCombo := gtk.NewComboBoxText()
-	fontCombo.SetHExpand(true)
-	for _, opt := range ui.availableFonts {
-		fontCombo.Append(opt.Family, opt.Label)
+	fontLabels := make([]string, len(ui.availableFonts))
+	fontIDs := make([]string, len(ui.availableFonts))
+	fontSelected := uint(0)
+	for i, opt := range ui.availableFonts {
+		fontLabels[i] = opt.Label
+		fontIDs[i] = opt.Family
+		if strings.EqualFold(opt.Family, currentFontName) {
+			fontSelected = uint(i)
+		}
 	}
-	fontCombo.SetActiveID(currentFontName)
+	fontDropDown := gtk.NewDropDownFromStrings(fontLabels)
+	fontDropDown.SetHExpand(true)
+	fontDropDown.SetSelected(fontSelected)
 
 	sizeLabel := gtk.NewLabel("Font Size")
 	sizeLabel.SetXAlign(0.0)
@@ -640,19 +644,26 @@ func (ui *UIState) handlePreferences() {
 
 	themeLabel := gtk.NewLabel("Default Theme")
 	themeLabel.SetXAlign(0.0)
-	themeCombo := gtk.NewComboBoxText()
-	themeCombo.SetHExpand(true)
-	for _, t := range ui.availableThemes {
-		themeCombo.Append(t.ID, t.Label)
+	themeLabels := make([]string, len(ui.availableThemes))
+	themeIDs := make([]string, len(ui.availableThemes))
+	themeSelected := uint(0)
+	for i, t := range ui.availableThemes {
+		themeLabels[i] = t.Label
+		themeIDs[i] = t.ID
+		if t.ID == currentThemeID {
+			themeSelected = uint(i)
+		}
 	}
-	themeCombo.SetActiveID(currentThemeID)
+	themeDropDown := gtk.NewDropDownFromStrings(themeLabels)
+	themeDropDown.SetHExpand(true)
+	themeDropDown.SetSelected(themeSelected)
 
 	grid.Attach(fontLabel, 0, 0, 1, 1)
-	grid.Attach(fontCombo, 1, 0, 1, 1)
+	grid.Attach(fontDropDown, 1, 0, 1, 1)
 	grid.Attach(sizeLabel, 0, 1, 1, 1)
 	grid.Attach(sizeSpin, 1, 1, 1, 1)
 	grid.Attach(themeLabel, 0, 2, 1, 1)
-	grid.Attach(themeCombo, 1, 2, 1, 1)
+	grid.Attach(themeDropDown, 1, 2, 1, 1)
 
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	buttonBox.SetHAlign(gtk.AlignEnd)
@@ -665,14 +676,8 @@ func (ui *UIState) handlePreferences() {
 	saveBtn := gtk.NewButtonWithLabel("Save")
 	saveBtn.AddCSSClass("suggested-action")
 	saveBtn.ConnectClicked(func() {
-		nextThemeID := themeCombo.ActiveID()
-		if nextThemeID == "" {
-			nextThemeID = currentThemeID
-		}
-		nextFontName := fontCombo.ActiveID()
-		if nextFontName == "" {
-			nextFontName = currentFontName
-		}
+		nextThemeID := themeIDs[themeDropDown.Selected()]
+		nextFontName := fontIDs[fontDropDown.Selected()]
 		nextFontSize := sizeSpin.Value()
 
 		prefsWin.Close()

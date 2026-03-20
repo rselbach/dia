@@ -12,6 +12,8 @@ readonly APP_NAME="dia"
 readonly DESKTOP_FILE_NAME="com.rselbach.dia.desktop"
 readonly METAINFO_FILE_NAME="com.rselbach.dia.metainfo.xml"
 readonly MERMAID_BUNDLE_NAME="mermaid.min.js"
+readonly MERMAID_VERSION="11.13.0"
+readonly MERMAID_URL="https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.min.js"
 
 VERSION=""
 BINARY_PATH="${REPO_ROOT}/dia"
@@ -270,7 +272,13 @@ main() {
   require_file "${REPO_ROOT}/build/install.sh"
   require_file "${REPO_ROOT}/build/icon.svg"
   require_file "${REPO_ROOT}/build/AppRun"
-  require_file "${REPO_ROOT}/vendor-js/${MERMAID_BUNDLE_NAME}"
+
+  local mermaid_path="${REPO_ROOT}/vendor-js/${MERMAID_BUNDLE_NAME}"
+  if [[ ! -f "${mermaid_path}" ]]; then
+    printf 'downloading mermaid %s...\n' "${MERMAID_VERSION}" >&2
+    mkdir -p "${REPO_ROOT}/vendor-js"
+    curl -fsSL -o "${mermaid_path}" "${MERMAID_URL}"
+  fi
 
   local staging_name="dia-${VERSION}-linux-amd64"
   local staging_dir="${OUTPUT_DIR}/${staging_name}"

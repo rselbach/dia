@@ -1,6 +1,9 @@
 dist/
 dia
 
+# Downloaded at build time
+vendor-js/
+
 # Rust build artifacts
 **/target/
 
