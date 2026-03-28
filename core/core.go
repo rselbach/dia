@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -153,7 +154,7 @@ func (c *DiaCore) SaveAs(path, content string) (string, error) {
 }
 
 func (c *DiaCore) writeFile(path, content string) (string, error) {
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", path, err)
 	}
 
@@ -233,14 +234,7 @@ func (c *DiaCore) LoadRecentFiles(path string) error {
 			return err
 		}
 
-		alreadySeen := false
-		for _, existing := range deduped {
-			if existing == candidate {
-				alreadySeen = true
-				break
-			}
-		}
-		if alreadySeen {
+		if slices.Contains(deduped, candidate) {
 			continue
 		}
 
@@ -262,7 +256,7 @@ func (c *DiaCore) SaveRecentFiles(path string) error {
 	}
 
 	if parent := filepath.Dir(normalized); parent != "" {
-		if err := os.MkdirAll(parent, 0755); err != nil {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", parent, err)
 		}
 	}
@@ -273,7 +267,7 @@ func (c *DiaCore) SaveRecentFiles(path string) error {
 	}
 	encoded = append(encoded, '\n')
 
-	if err := os.WriteFile(normalized, encoded, 0644); err != nil {
+	if err := os.WriteFile(normalized, encoded, 0o644); err != nil {
 		return fmt.Errorf("failed to write %s: %w", normalized, err)
 	}
 	return nil
@@ -300,5 +294,9 @@ func normalizePath(path string) (string, error) {
 	if path == "" {
 		return "", errors.New("path must not be empty")
 	}
-	return filepath.Abs(path)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path for %s: %w", path, err)
+	}
+	return abs, nil
 }

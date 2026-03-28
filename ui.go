@@ -90,7 +90,10 @@ func newUIState(app *gtk.Application) *UIState {
 	window := gtk.NewApplicationWindow(app)
 	window.SetDefaultSize(1280, 800)
 
-	installAppChromeCSS()
+	var startupErrors []string
+	if cssErr := installAppChromeCSS(); cssErr != "" {
+		startupErrors = append(startupErrors, cssErr)
+	}
 
 	root := gtk.NewBox(gtk.OrientationVertical, 6)
 	root.SetMarginTop(8)
@@ -148,13 +151,15 @@ func newUIState(app *gtk.Application) *UIState {
 	editorCSSProvider := gtk.NewCSSProvider()
 	if display := gdk.DisplayGetDefault(); display != nil {
 		gtk.StyleContextAddProviderForDisplay(display, editorCSSProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+	} else {
+		startupErrors = append(startupErrors, "failed to get default display for editor CSS")
 	}
 
 	root.Append(paned)
 	root.Append(statusLabel)
 	window.SetChild(root)
 
-	startupErrors := setup.startupErrors
+	startupErrors = append(startupErrors, setup.startupErrors...)
 	if mermaidErr != "" {
 		startupErrors = append(startupErrors, mermaidErr)
 	}
@@ -676,8 +681,17 @@ func (ui *UIState) handlePreferences() {
 	saveBtn := gtk.NewButtonWithLabel("Save")
 	saveBtn.AddCSSClass("suggested-action")
 	saveBtn.ConnectClicked(func() {
-		nextThemeID := themeIDs[themeDropDown.Selected()]
-		nextFontName := fontIDs[fontDropDown.Selected()]
+		selectedThemeIdx := themeDropDown.Selected()
+		selectedFontIdx := fontDropDown.Selected()
+
+		if int(selectedThemeIdx) >= len(themeIDs) || int(selectedFontIdx) >= len(fontIDs) {
+			ui.setError("invalid selection in preferences dialog")
+			prefsWin.Close()
+			return
+		}
+
+		nextThemeID := themeIDs[selectedThemeIdx]
+		nextFontName := fontIDs[selectedFontIdx]
 		nextFontSize := sizeSpin.Value()
 
 		prefsWin.Close()
@@ -836,13 +850,15 @@ func buildPrimaryMenuModel() gio.MenuModeller {
 	return root
 }
 
-func installAppChromeCSS() {
+func installAppChromeCSS() string {
 	provider := gtk.NewCSSProvider()
 	provider.LoadFromString(appChromeCSS)
 
 	if display := gdk.DisplayGetDefault(); display != nil {
 		gtk.StyleContextAddProviderForDisplay(display, provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+		return ""
 	}
+	return "failed to get default display for app chrome CSS"
 }
 
 func buildEditorCSS(fontName string, fontSize float64) string {

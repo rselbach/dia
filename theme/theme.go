@@ -124,17 +124,15 @@ func Themes() []ThemeInfo {
 
 // NormalizeThemeID returns themeID if it matches a known theme, otherwise DefaultThemeID.
 func NormalizeThemeID(themeID string) string {
-	for _, td := range themes {
-		if td.ID == themeID {
-			return td.ID
-		}
+	if _, ok := findTheme(themeID); ok {
+		return themeID
 	}
 	return DefaultThemeID
 }
 
 // MermaidConfigJS generates the JS configuration object literal for mermaid.initialize().
 func MermaidConfigJS(themeID string) string {
-	td := findTheme(themeID)
+	td, _ := findTheme(themeID)
 
 	parts := []string{
 		`startOnLoad: false`,
@@ -156,11 +154,12 @@ func MermaidConfigJS(themeID string) string {
 	return fmt.Sprintf("{ %s }", strings.Join(parts, ", "))
 }
 
-func findTheme(themeID string) themeDef {
+// findTheme looks up a theme by ID. Returns the theme and true if found, or the default theme and false.
+func findTheme(themeID string) (themeDef, bool) {
 	for _, td := range themes {
 		if td.ID == themeID {
-			return td
+			return td, true
 		}
 	}
-	return themes[0]
+	return themes[0], false
 }
